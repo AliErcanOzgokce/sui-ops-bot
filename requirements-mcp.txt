@@ -1,0 +1,7 @@
+# MCP server deps (superset of the bot's). Install for the manual-control MCP:
+#   pip install -r requirements-mcp.txt
+mcp>=1.2
+anthropic>=0.40
+gspread>=6.0
+google-auth>=2.30
+slack_bolt>=1.18

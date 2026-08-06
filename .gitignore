@@ -1,0 +1,34 @@
+# ---- Secrets: never commit ----
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.key
+service_account*.json
+
+# ---- Runtime / logs ----
+audit.jsonl
+*.log
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# ---- Editor / OS ----
+.DS_Store
+.idea/
+.vscode/
+*.swp
