@@ -1,0 +1,31 @@
+# Run from the repo root:  docker compose -f deploy/docker-compose.yml up -d --build
+# Paths are relative to this file (deploy/), so the repo root is "..".
+services:
+  sui-ops-bot:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: sui-ops-bot
+    restart: unless-stopped
+    env_file: ../.env
+    volumes:
+      # Service-account JSON, mounted read-only.
+      - ../secrets:/app/secrets:ro
+      # Persist the audit log across restarts (host-side file).
+      - ../audit.jsonl:/app/audit.jsonl
+    # Socket Mode = outbound WebSocket only; no ports to publish.
+
+  # Remote MCP endpoint (token-auth'd HTTP) so other dev-leads can add it to their
+  # Claude with just a URL, no secrets/files shared. Same codebase as the local MCP.
+  sui-ops-mcp-http:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.mcp
+    container_name: sui-ops-mcp-http
+    restart: unless-stopped
+    env_file: ../.env
+    command: ["--http"]
+    ports:
+      - "8787:8787"
+    volumes:
+      - ../secrets:/app/secrets:ro

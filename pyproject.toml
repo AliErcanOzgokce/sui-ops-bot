@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sui-ops-bot"
+version = "0.1.0"
+description = "Sui dev-leads escalation ops bot: Slack auto-tracker + MCP control server backed by a shared Google Sheet"
+requires-python = ">=3.11"
+dependencies = [
+    "slack_bolt>=1.18",
+    "anthropic>=0.40",
+    "gspread>=6.0",
+    "google-auth>=2.30",
+    # 1.x FastMCP API (mcp.server.fastmcp, streamable_http_app, TransportSecuritySettings).
+    # 2.0 restructured these; pin below it until the server code is ported.
+    "mcp>=1.2,<2",
+    "uvicorn>=0.30",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+
+[project.scripts]
+sui-ops-bot = "sui_ops_bot.slackbot:main"
+sui-ops-mcp = "sui_ops_bot.mcpserver:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B"]
+# E501 (line length) is enforced by the formatter, not the linter, for this repo;
+# a handful of long f-strings in Slack copy are clearer left intact.
+ignore = ["E501"]

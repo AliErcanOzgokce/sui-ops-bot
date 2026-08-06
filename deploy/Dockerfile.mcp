@@ -1,0 +1,17 @@
+# MCP server image. Hand this to dev-leads so they need no local Python setup.
+# The MCP speaks JSON-RPC over stdio, so the client launches it per session with
+#   docker run -i --rm ...   (note: -i, and NO -t, a TTY would corrupt the stream)
+# Build from the repo root:  docker build -f deploy/Dockerfile.mcp -t sui-ops-mcp .
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY pyproject.toml ./
+COPY src ./src
+RUN pip install --no-cache-dir .
+
+# Unbuffered so stderr diagnostics stream to the client's MCP log pane promptly.
+# (stdout stays pure JSON-RPC, the code reroutes logging to stderr.)
+ENV PYTHONUNBUFFERED=1
+
+ENTRYPOINT ["python", "-m", "sui_ops_bot.mcpserver"]
