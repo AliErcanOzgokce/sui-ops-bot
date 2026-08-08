@@ -62,6 +62,35 @@ def platform_from_source(source: str) -> str:
     return ""
 
 
+def shared_attachment(event: dict) -> dict:
+    """Return the first forwarded/shared message attachment on a Slack event, or {}.
+
+    When a Slack message is forwarded, its content is not in the top-level `text`;
+    it arrives as an attachment flagged `is_share` with the original `text`,
+    `author_name`, and a `from_url` back to the source message."""
+    for a in event.get("attachments") or []:
+        if a.get("is_share") and (a.get("text") or a.get("fallback")):
+            return a
+    return {}
+
+
+def effective_text(event: dict) -> str:
+    """The text a classifier should judge: the message's own text plus any forwarded
+    content (with the original author noted so `raised_by` can be inferred). This is
+    what lets a plain forward, whose top-level text is empty, still be tracked."""
+    parts = []
+    own = (event.get("text") or "").strip()
+    if own:
+        parts.append(own)
+    att = shared_attachment(event)
+    if att:
+        atext = (att.get("text") or "").strip()
+        author = (att.get("author_name") or "").strip()
+        if atext:
+            parts.append(f"Forwarded from {author}: {atext}" if author else atext)
+    return "\n".join(parts)
+
+
 def is_substantive(text: str, min_chars: int) -> bool:
     """Cheap local pre-filter: keep only messages worth a Claude call."""
     if not text:

@@ -1,10 +1,12 @@
 from sui_ops_bot import config
 from sui_ops_bot.ids import (
+    effective_text,
     is_substantive,
     match_enum,
     norm_id,
     parse_ids,
     platform_from_source,
+    shared_attachment,
 )
 
 
@@ -65,6 +67,47 @@ class TestPlatformFromSource:
     def test_unknown_is_blank(self):
         assert platform_from_source("just a note") == ""
         assert platform_from_source("") == ""
+
+
+class TestForwardedMessages:
+    def _fwd_event(self, own_text=""):
+        return {
+            "text": own_text,
+            "attachments": [{
+                "is_share": True,
+                "text": "Builder cannot pass assert_app_is_authorized on DeepBook testnet.",
+                "author_name": "Jane Dev",
+                "from_url": "https://team.slack.com/archives/C0B5FS5HZ37/p1786174903232989",
+            }],
+        }
+
+    def test_plain_forward_recovers_content(self):
+        # Top-level text is empty (the real-world case that used to be dropped).
+        ev = self._fwd_event(own_text="")
+        eff = effective_text(ev)
+        assert "assert_app_is_authorized" in eff
+        assert "Forwarded from Jane Dev" in eff
+        assert is_substantive(eff, config.MIN_MESSAGE_CHARS)
+
+    def test_forward_with_own_comment_keeps_both(self):
+        ev = self._fwd_event(own_text="please look at this one")
+        eff = effective_text(ev)
+        assert "please look at this one" in eff
+        assert "assert_app_is_authorized" in eff
+
+    def test_shared_attachment_exposes_author_and_url(self):
+        att = shared_attachment(self._fwd_event())
+        assert att.get("author_name") == "Jane Dev"
+        assert att.get("from_url", "").startswith("https://")
+
+    def test_no_attachment_is_empty(self):
+        assert shared_attachment({"text": "hi"}) == {}
+        assert effective_text({"text": "just typed"}) == "just typed"
+
+    def test_non_share_attachment_ignored(self):
+        ev = {"text": "", "attachments": [{"is_share": False, "text": "unfurl preview"}]}
+        assert shared_attachment(ev) == {}
+        assert effective_text(ev) == ""
 
 
 class TestIsSubstantive:
