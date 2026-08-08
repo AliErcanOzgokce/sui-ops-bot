@@ -40,6 +40,19 @@ def today_str() -> str:
     return datetime.now(tz()).date().isoformat()
 
 
+def current_window(hour: int | None = None) -> str:
+    """The on-call shift a row is logged under, from the UTC hour. Matches the
+    tracker's Window column (EMEA / Americas / APAC). Passed an explicit hour in
+    tests; otherwise reads the current UTC hour."""
+    if hour is None:
+        hour = datetime.now(UTC).hour
+    if 6 <= hour < 14:
+        return "EMEA"
+    if 14 <= hour < 22:
+        return "Americas"
+    return "APAC"
+
+
 def log(msg: str) -> None:
     stream = sys.stderr if _stderr_only else sys.stdout
     print(f"{datetime.now(UTC).isoformat()} {msg}", file=stream, flush=True)

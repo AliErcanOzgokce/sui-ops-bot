@@ -30,8 +30,8 @@ from slack_bolt.adapter.socket_mode import SocketModeHandler
 
 from . import config, reports
 from .classify import classify_message, judge_resolution
-from .ids import effective_text, is_substantive, shared_attachment
-from .logutil import audit, log, today_str
+from .ids import clean_channel, effective_text, is_substantive, shared_attachment
+from .logutil import audit, current_window, log, today_str
 from .sheet import Row, SheetStore
 from .slack_client import (
     app,
@@ -75,13 +75,15 @@ def classify_and_log(channel: str, ts: str, user: str, text: str,
     fields = {
         # ID is left to the sheet's own formula (set inside store.append).
         "Date Asked": today_str(),
-        "Window": config.WINDOW_DEFAULT,
+        "Window": config.WINDOW_DEFAULT or current_window(),
         "Platform": data.get("platform", ""),
-        "Channel": data.get("source_channel", ""),
+        "Channel": clean_channel(data.get("source_channel", "")),
         "Question Summary": data.get("question_summary", ""),
         "Link": data.get("link", "") or fwd_url or link,
         "Raised By": data.get("raised_by", "") or fwd_author or poster_name,
-        "Owner": config.OWNER_DEFAULT,
+        # The lead who logged it owns it (matches the sheet's old convention), and
+        # their uid is kept in Bot Refs for @-mentions.
+        "Owner": poster_name or config.OWNER_DEFAULT,
         "Priority": data.get("priority", ""),
         "Status": config.STATUS_ESCALATED,
         "Product": product,
@@ -259,10 +261,12 @@ def on_reaction(event, logger):
         if not row:
             return
         # Meaning is derived from WHICH message was reacted on:
-        #   x on the bot's log note     -> discard (only while still open)
+        #   x on the bot's log note OR the original -> discard (while still open)
         #   check on the bot's confirm  -> close
         #   check on the original       -> run the resolution check
-        if reaction in config.DISCARD_REACTIONS and ts == row.anchor_ts and row.status in config.OPEN_STATUSES:
+        if (reaction in config.DISCARD_REACTIONS
+                and ts in (row.anchor_ts, row.original_ts)
+                and row.status in config.OPEN_STATUSES):
             discard_row(row, channel)
         elif reaction in config.CHECK_REACTIONS:
             if ts == row.confirm_ts and row.status in config.OPEN_STATUSES:

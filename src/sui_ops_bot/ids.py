@@ -44,6 +44,20 @@ def match_enum(value: str, choices: list[str], default: str) -> str:
     return default
 
 
+# Placeholder values a classifier may emit for an unknown channel/venue. These
+# should land as an empty cell, not literal text, to match the sheet's old format.
+_CHANNEL_PLACEHOLDERS = {
+    "", "<unknown>", "unknown", "n/a", "na", "none", "<none>", "-", "?",
+    "<unclear>", "unclear", "unspecified", "null",
+}
+
+
+def clean_channel(value: str) -> str:
+    """Blank out placeholder channel/venue strings so the Channel column stays clean."""
+    v = (value or "").strip()
+    return "" if v.lower() in _CHANNEL_PLACEHOLDERS else v
+
+
 def platform_from_source(source: str) -> str:
     """Infer the source medium (Telegram/GitHub/...) from a link or venue string."""
     s = (source or "").lower()
