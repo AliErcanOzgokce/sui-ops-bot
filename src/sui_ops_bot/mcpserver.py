@@ -34,7 +34,7 @@ from . import config, logutil, reports
 logutil.use_stderr()
 
 from .ids import match_enum, norm_id, parse_ids, platform_from_source  # noqa: E402
-from .logutil import audit, log, today_str  # noqa: E402
+from .logutil import audit, current_window, log, today_str  # noqa: E402
 from .sheet import Row, SheetStore  # noqa: E402
 from .slack_client import client, has_check_reaction, permalink, post, thread_messages  # noqa: E402
 
@@ -132,7 +132,7 @@ def post_message(text: str, source: str, product: str = "", type: str = "",
 
     fields = {
         "Date Asked": today_str(),
-        "Window": config.WINDOW_DEFAULT,
+        "Window": config.WINDOW_DEFAULT or current_window(),
         "Platform": platform_from_source(source),
         "Channel": source,
         "Question Summary": text,

@@ -1,5 +1,6 @@
 from sui_ops_bot import config
 from sui_ops_bot.ids import (
+    clean_channel,
     effective_text,
     is_substantive,
     match_enum,
@@ -8,6 +9,30 @@ from sui_ops_bot.ids import (
     platform_from_source,
     shared_attachment,
 )
+from sui_ops_bot.logutil import current_window
+
+
+class TestCurrentWindow:
+    def test_emea_americas_apac_by_hour(self):
+        assert current_window(6) == "EMEA"
+        assert current_window(13) == "EMEA"
+        assert current_window(14) == "Americas"
+        assert current_window(21) == "Americas"
+        assert current_window(22) == "APAC"
+        assert current_window(3) == "APAC"
+
+    def test_always_returns_a_window(self):
+        assert all(current_window(h) in {"EMEA", "Americas", "APAC"} for h in range(24))
+
+
+class TestCleanChannel:
+    def test_placeholders_become_blank(self):
+        for p in ("<UNKNOWN>", "unknown", "N/A", "none", "-", "", "  ", "?"):
+            assert clean_channel(p) == ""
+
+    def test_real_venue_kept(self):
+        assert clean_channel("TG - Overflow DeepBook") == "TG - Overflow DeepBook"
+        assert clean_channel("  GitHub Issues  ") == "GitHub Issues"
 
 
 class TestNormId:
