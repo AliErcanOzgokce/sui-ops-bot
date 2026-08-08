@@ -23,7 +23,34 @@ See `.env.example` for the full annotated list. The essentials:
 
 The Google Sheet must be shared with the service-account email (Editor).
 
+## Running under PM2 (current production setup)
+
+Both processes run under PM2 on the host, defined in `deploy/pm2.ecosystem.config.js`
+(paths are derived from the repo, no secrets in the file). Prerequisite: a virtualenv
+at `<repo>/.venv` with the package installed.
+
+```bash
+python -m venv .venv && .venv/bin/pip install -e .
+pm2 start deploy/pm2.ecosystem.config.js
+pm2 save
+```
+
+- `pm2 save` persists the process list so `pm2 resurrect` restores it.
+- Reboot auto-start needs a one-time root command (PM2 prints it):
+  `pm2 startup systemd -u arb --hp /home/arb`, then run the `sudo env ... pm2 startup ...`
+  line it emits, and `pm2 save` again.
+- Do NOT run the Docker containers and the PM2 processes at the same time: two
+  auto-trackers would double-log, and both bind MCP port 8787. Pick one.
+- Update after a code change: `git pull` then `pm2 restart sui-ops-bot sui-ops-mcp-http`
+  (the venv install is editable, so no rebuild is needed).
+- `BACKFILL_HOURS=0` is recommended for a long-running PM2 deployment: live Socket
+  Mode has no gaps, and a nonzero backfill re-scans on every restart, which can
+  re-log items that were discarded. Raise it only to backfill after real downtime.
+
 ## Docker Compose
+
+The Docker path is still supported (see `deploy/`), but is an alternative to PM2,
+not run alongside it.
 
 From the repo root:
 
