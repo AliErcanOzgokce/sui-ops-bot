@@ -30,7 +30,7 @@ from slack_bolt.adapter.socket_mode import SocketModeHandler
 
 from . import config, reports
 from .classify import classify_message, judge_resolution
-from .ids import is_substantive
+from .ids import effective_text, is_substantive, shared_attachment
 from .logutil import audit, log, today_str
 from .sheet import Row, SheetStore
 from .slack_client import (
@@ -46,7 +46,8 @@ _bot_user_id: str | None = None
 
 
 # -- Feature 1: auto-log new escalations ------------------------------------
-def classify_and_log(channel: str, ts: str, user: str, text: str) -> None:
+def classify_and_log(channel: str, ts: str, user: str, text: str,
+                     forwarded: dict | None = None) -> None:
     try:
         result = classify_message(text)
     except Exception as exc:
@@ -59,11 +60,16 @@ def classify_and_log(channel: str, ts: str, user: str, text: str) -> None:
         return
 
     poster_name = user_display_name(user)
+    forwarded = forwarded or {}
     link = ""
     try:
         link = app.client.chat_getPermalink(channel=channel, message_ts=ts)["permalink"]
     except Exception:
         pass
+    # For a forwarded message, prefer the original author and a link to the source
+    # message over the person who forwarded it and the in-channel permalink.
+    fwd_author = (forwarded.get("author_name") or "").strip()
+    fwd_url = (forwarded.get("from_url") or "").strip()
     product = data.get("product", config.PRODUCT_DEFAULT) or config.PRODUCT_DEFAULT
     qtype = data.get("type", config.TYPE_DEFAULT) or config.TYPE_DEFAULT
     fields = {
@@ -73,8 +79,8 @@ def classify_and_log(channel: str, ts: str, user: str, text: str) -> None:
         "Platform": data.get("platform", ""),
         "Channel": data.get("source_channel", ""),
         "Question Summary": data.get("question_summary", ""),
-        "Link": data.get("link", "") or link,
-        "Raised By": data.get("raised_by", "") or poster_name,
+        "Link": data.get("link", "") or fwd_url or link,
+        "Raised By": data.get("raised_by", "") or fwd_author or poster_name,
         "Owner": config.OWNER_DEFAULT,
         "Priority": data.get("priority", ""),
         "Status": config.STATUS_ESCALATED,
@@ -230,11 +236,14 @@ def on_message(event, logger):
                 run_resolution_check(row, channel, thread_ts)
             return
 
-        if not is_substantive(text, config.MIN_MESSAGE_CHARS):
+        # A forwarded message has empty top-level text; its content lives in a
+        # shared attachment. effective_text merges both so a plain forward tracks.
+        eff = effective_text(event)
+        if not is_substantive(eff, config.MIN_MESSAGE_CHARS):
             return
         if store.ts_tracked(ts):
             return
-        classify_and_log(channel, ts, user, text)
+        classify_and_log(channel, ts, user, eff, forwarded=shared_attachment(event))
     except Exception:
         log("ERROR in on_message:\n" + traceback.format_exc())
 
@@ -313,10 +322,12 @@ def backfill() -> None:
                     ts = m.get("ts", "")
                     if store.ts_tracked(ts):
                         continue
-                    if not is_substantive(m.get("text", ""), config.MIN_MESSAGE_CHARS):
+                    eff = effective_text(m)
+                    if not is_substantive(eff, config.MIN_MESSAGE_CHARS):
                         continue
                     scanned += 1
-                    classify_and_log(channel, ts, m.get("user", ""), m.get("text", ""))
+                    classify_and_log(channel, ts, m.get("user", ""), eff,
+                                     forwarded=shared_attachment(m))
                 cursor = resp.get("response_metadata", {}).get("next_cursor")
                 if not cursor:
                     break
