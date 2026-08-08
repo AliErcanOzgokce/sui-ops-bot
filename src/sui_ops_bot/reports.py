@@ -72,6 +72,29 @@ def _link(store, row, linker) -> str:
 # ---------------------------------------------------------------------------
 # Formatters
 # ---------------------------------------------------------------------------
+def escalation_note_blocks(rid, product: str, qtype: str, row_link: str, value: str) -> list:
+    """Block Kit for the bot's in-thread log note: the summary line plus one-tap
+    Discard and Mark-solved buttons, so a lead never has to hunt for a reaction.
+    `value` is the escalation message ts, used by the action handler to find the row."""
+    badge = " · ".join(p for p in (product, qtype) if p) or "Unclassified"
+    return [
+        {"type": "section", "text": {"type": "mrkdwn",
+            "text": f":pushpin: Logged as *#{rid}*  ·  {badge}  (<{row_link}|open row>)"}},
+        {"type": "actions", "block_id": f"esc-{rid}", "elements": [
+            {"type": "button", "action_id": "row_discard", "style": "danger",
+             "text": {"type": "plain_text", "text": ":wastebasket: Discard"}, "value": value,
+             "confirm": {
+                 "title": {"type": "plain_text", "text": "Discard this?"},
+                 "text": {"type": "mrkdwn", "text": f"Remove *#{rid}* from the tracker."},
+                 "confirm": {"type": "plain_text", "text": "Discard"},
+                 "deny": {"type": "plain_text", "text": "Keep"}}},
+            {"type": "button", "action_id": "row_solved", "style": "primary",
+             "text": {"type": "plain_text", "text": ":white_check_mark: Mark solved"},
+             "value": value},
+        ]},
+    ]
+
+
 def status_report(store) -> str:
     store.reload()
     rows = store.open_rows()

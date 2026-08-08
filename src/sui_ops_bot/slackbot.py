@@ -104,8 +104,8 @@ def classify_and_log(channel: str, ts: str, user: str, text: str,
     try:
         posted = post(
             channel=channel, thread_ts=ts,
-            text=(f":pushpin: Logged as *#{rid}*  ·  {product} · {qtype} "
-                  f"(<{row_link}|open row>). Not an escalation? React :x: to discard."),
+            text=f":pushpin: Logged as #{rid} ({product} · {qtype}). Discard or mark solved below.",
+            blocks=reports.escalation_note_blocks(rid, product, qtype, row_link, value=ts),
         )
         store.set_refs(row.row_number, anchor_ts=posted["ts"])
     except Exception as exc:
@@ -275,6 +275,46 @@ def on_reaction(event, logger):
                 run_resolution_check(row, channel, row.original_ts)
     except Exception:
         log("ERROR in on_reaction:\n" + traceback.format_exc())
+
+
+def _handle_row_action(body: dict, kind: str) -> None:
+    """Shared handler for the Discard / Mark-solved buttons on a log note. `value`
+    carries the escalation message ts, so the row is found the same way a reaction
+    on the original message would find it."""
+    try:
+        value = (body.get("actions") or [{}])[0].get("value", "")
+        channel = body.get("channel", {}).get("id", "")
+        note_ts = body.get("container", {}).get("message_ts", "")
+        row = store.find_by_ts(value)
+        if not row or row.status not in config.OPEN_STATUSES:
+            return
+        rid = row.values.get("ID")
+        if kind == "discard":
+            discard_row(row, channel)
+            note = f":wastebasket: *#{rid}* discarded."
+        else:
+            close_row(row, channel)
+            note = f":lock: *#{rid}* marked solved."
+        # Replace the note's buttons so they cannot be tapped again.
+        if channel and note_ts:
+            try:
+                app.client.chat_update(channel=channel, ts=note_ts, text=note, blocks=[])
+            except Exception as exc:
+                log(f"WARN could not update note: {exc}")
+    except Exception:
+        log("ERROR in row action:\n" + traceback.format_exc())
+
+
+@app.action("row_discard")
+def act_discard(ack, body):
+    ack()
+    _handle_row_action(body, "discard")
+
+
+@app.action("row_solved")
+def act_solved(ack, body):
+    ack()
+    _handle_row_action(body, "solved")
 
 
 @app.command("/status")

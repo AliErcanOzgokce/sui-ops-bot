@@ -120,6 +120,26 @@ class TestWeeklyReport:
         assert "tracker is clear" in out
 
 
+class TestEscalationNoteBlocks:
+    def test_has_discard_and_solved_buttons_with_value(self):
+        blocks = reports.escalation_note_blocks("44", "Walrus", "Bug",
+                                                "https://sheet/row/48", value="123.456")
+        # find the actions block
+        actions = next(b for b in blocks if b["type"] == "actions")
+        ids = {e["action_id"] for e in actions["elements"]}
+        assert ids == {"row_discard", "row_solved"}
+        assert all(e["value"] == "123.456" for e in actions["elements"])
+        # discard is guarded by a confirm dialog
+        discard = next(e for e in actions["elements"] if e["action_id"] == "row_discard")
+        assert "confirm" in discard
+
+    def test_summary_line_shows_id_and_badge(self):
+        blocks = reports.escalation_note_blocks("7", "Seal", "Question", "https://x", "1")
+        section = next(b for b in blocks if b["type"] == "section")
+        assert "*#7*" in section["text"]["text"]
+        assert "Seal · Question" in section["text"]["text"]
+
+
 class TestStatusReport:
     def test_by_product_breakdown(self):
         rows = [
