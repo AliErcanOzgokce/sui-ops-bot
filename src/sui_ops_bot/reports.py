@@ -220,7 +220,7 @@ def status_report(store) -> str:
     lines.append(f"*Aging (>{config.AGING_DAYS}d, still open):* {aging}")
     if oldest is not None:
         link = oldest.values.get("Link", "") or store.row_link(oldest.row_number)
-        lines.append(f"*Oldest:* {oldest.values.get('ID')} ({oldest_age}d) — "
+        lines.append(f"*Oldest:* {oldest.values.get('ID')} ({oldest_age}d): "
                      f"{oldest.values.get('Question Summary','')} <{link}|↗>")
     return "\n".join(lines)
 
@@ -267,9 +267,9 @@ def weekly_report(store, days: int = 7, product: str = "", type: str = "", linke
     if product or type:
         scope = " (" + ", ".join(x for x in (product, type) if x) + ")"
     if not rows:
-        return f":white_check_mark: No open questions{scope} — the tracker is clear."
+        return f":white_check_mark: No open questions{scope}. The tracker is clear."
     grouped = group_by_product(rows)
-    lines = [f"*:memo: Open questions report*{scope} — {len(rows)} unanswered"]
+    lines = [f"*:memo: Open questions report*{scope}: {len(rows)} unanswered"]
     for prod, prod_rows in grouped.items():
         prod_rows = sorted(prod_rows, key=lambda r: r.values.get("Date Asked", ""))
         lines.append(f"\n*{prod}* ({len(prod_rows)})")
@@ -278,7 +278,7 @@ def weekly_report(store, days: int = 7, product: str = "", type: str = "", linke
             age = age_days(r.values.get("Date Asked", ""))
             agestr = f"{age}d" if age is not None else "?"
             flag = " :hourglass_flowing_sand:" if (age is not None and age > days) else ""
-            typ = r.values.get("Type", "") or "—"
+            typ = r.values.get("Type", "") or "-"
             raised = r.values.get("Raised By", "")
             raised_str = f" · raised by {raised}" if raised else ""
             lines.append(f"• *#{rid}* [{typ} · {r.status}, {agestr}{flag}] "
