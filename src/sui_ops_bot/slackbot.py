@@ -200,7 +200,7 @@ def run_resolution_check(row: Row, channel: str, thread_ts: str) -> None:
     existing = row.values.get(store.notes_col, "")
     proposed = f"⏳ Proposed (react ✅ to close): {summary}"
     if answered_by:
-        proposed += f" — answered by {answered_by}"
+        proposed += f" (answered by {answered_by})"
     new_note = proposed + (f"\n{existing}" if existing else "")
     store.set(row.row_number, {store.notes_col: new_note})
     row_link = store.row_link(row.row_number)
@@ -208,7 +208,7 @@ def run_resolution_check(row: Row, channel: str, thread_ts: str) -> None:
     try:
         posted = post(
             channel=channel, thread_ts=thread_ts,
-            text=(f"{owner_tag} Looks resolved — {summary or 'see thread'}. "
+            text=(f"{owner_tag} Looks resolved: {summary or 'see thread'}. "
                   f"React :white_check_mark: to confirm and I'll close it "
                   f"(<{row_link}|row>)."),
         )
@@ -223,7 +223,7 @@ def close_row(row: Row, channel: str) -> None:
     audit("close", row=row.row_number, id=row.values.get("ID"))
     try:
         post(channel=channel, thread_ts=row.original_ts,
-             text=f":lock: Confirmed — *#{row.values.get('ID')}* closed.")
+             text=f":lock: Confirmed. *#{row.values.get('ID')}* closed.")
     except Exception:
         pass
     log(f"row {row.row_number} -> Closed")
@@ -236,7 +236,7 @@ def discard_row(row: Row, channel: str) -> None:
     store.delete_row(row.row_number)  # false positive -> remove the row entirely
     try:
         post(channel=channel, thread_ts=orig,
-             text=":wastebasket: Discarded — removed from the tracker.")
+             text=":wastebasket: Discarded, removed from the tracker.")
     except Exception:
         pass
     log(f"row {row.row_number} -> Discarded")
@@ -474,7 +474,7 @@ def on_mention(event, say):
 
 
 # ---------------------------------------------------------------------------
-# Startup backfill — Socket Mode does not replay missed events.
+# Startup backfill. Socket Mode does not replay missed events.
 # ---------------------------------------------------------------------------
 def backfill() -> None:
     if config.BACKFILL_HOURS <= 0 or not config.SLACK_CHANNEL_IDS:
@@ -536,7 +536,7 @@ def run_diag() -> None:
     log("=== DIAG START ===")
     try:
         who = app.client.auth_test()
-        log(f"[slack] auth OK — team={who.get('team')} bot user_id={who.get('user_id')} "
+        log(f"[slack] auth OK: team={who.get('team')} bot user_id={who.get('user_id')} "
             f"name='{who.get('user')}'")
     except Exception as exc:
         log(f"[slack] FAIL auth_test: {exc}")
@@ -546,7 +546,7 @@ def run_diag() -> None:
             info = app.client.conversations_info(channel=ch)["channel"]
             log(f"[slack] channel {ch} name='{info.get('name')}' is_member={info.get('is_member')}")
             if not info.get("is_member"):
-                log(f"[slack] WARN not a member of {ch} — run /invite in that channel")
+                log(f"[slack] WARN not a member of {ch}, run /invite in that channel")
             app.client.conversations_history(channel=ch, limit=1)
             log(f"[slack] channel {ch} history read OK")
         except Exception as exc:
@@ -565,7 +565,7 @@ def run_diag() -> None:
 
     try:
         s = SheetStore(config.SHEET_ID, config.SHEET_TAB, config.GOOGLE_CREDENTIALS_FILE)
-        log(f"[sheet] OK — header row {s.header_row}, {len(s.rows)} data rows, "
+        log(f"[sheet] OK: header row {s.header_row}, {len(s.rows)} data rows, "
             f"notes col='{s.notes_col}'")
         missing = [c for c in config.MANAGED_COLUMNS if c not in s.header]
         log(f"[sheet] managed columns present: {'yes' if not missing else 'MISSING ' + str(missing)}")
@@ -573,7 +573,7 @@ def run_diag() -> None:
     except FileNotFoundError as exc:
         log(f"[sheet] FAIL service-account file: {exc}")
     except Exception as exc:
-        log(f"[sheet] FAIL — often means the sheet is not shared with the service "
+        log(f"[sheet] FAIL: often means the sheet is not shared with the service "
             f"account email, or wrong SHEET_ID/gid: {exc}")
     log("=== DIAG END ===")
 

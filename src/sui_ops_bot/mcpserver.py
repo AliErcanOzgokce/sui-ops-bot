@@ -203,7 +203,7 @@ def check_status(ids: str = "", product: str = "", type: str = "") -> str:
     out = []
     for row, raw in rows:
         if not row:
-            out.append(f"*#{raw}* — not found in the tracker.")
+            out.append(f"*#{raw}* not found in the tracker.")
             continue
         rid = row.values.get("ID", raw)
         channel = row.slack_channel or config.MCP_CHANNEL_ID
@@ -213,7 +213,7 @@ def check_status(ids: str = "", product: str = "", type: str = "") -> str:
         link = row.values.get("Link", "") or store.row_link(row.row_number)
 
         if not ts or not channel:
-            out.append(f"*#{rid}* [{badge}] — {row.status} (no Slack thread). {summary} <{link}|↗>")
+            out.append(f"*#{rid}* [{badge}] · {row.status} (no Slack thread). {summary} <{link}|↗>")
             continue
 
         msgs = thread_messages(channel, ts)
@@ -236,10 +236,10 @@ def check_status(ids: str = "", product: str = "", type: str = "") -> str:
                     resolved = bool(res["input"].get("resolved"))
                 except Exception as exc:
                     log(f"WARN judge failed for #{rid}: {exc}")
-            verdict = "✅ Looks solved" if resolved else "🕓 Open — no answer yet"
+            verdict = "✅ Looks solved" if resolved else "🕓 Open, no answer yet"
 
         last_str = f"{last['who']}: {last['text']}" if last else "(no replies yet)"
-        out.append(f"*#{rid}* [{badge}] — {verdict}\n    {summary}\n"
+        out.append(f"*#{rid}* [{badge}] · {verdict}\n    {summary}\n"
                    f"    _last:_ {last_str}\n    <{link}|open ↗>")
     return "\n".join(out)
 
@@ -273,7 +273,7 @@ def weekly_report(days: int = 7, product: str = "", type: str = "", post: bool =
         audit("mcp_report_posted", ts=posted.get("ts"))
         return f"✅ Report posted to the dev-leads channel.\n{permalink(channel, posted['ts'])}"
 
-    return report + "\n\n_(preview — call weekly_report with post=true to publish it.)_"
+    return report + "\n\n_(preview: call weekly_report with post=true to publish it.)_"
 
 
 @mcp.tool()
@@ -344,7 +344,7 @@ def ping(ids: str, note: str = "") -> str:
         if not (channel and ts):
             notes.append(f"#{rid}: no Slack thread linked")
             continue
-        text = f"{tag} :wave: gentle follow-up on *#{rid}* — any update here?"
+        text = f"{tag} :wave: gentle follow-up on *#{rid}*. Any update here?"
         if note.strip():
             text += f"\n{note.strip()}"
         try:
@@ -378,13 +378,13 @@ def _check() -> int:
     if not os.path.exists(config.GOOGLE_CREDENTIALS_FILE):
         problems.append(f"service account file not found: {config.GOOGLE_CREDENTIALS_FILE}")
     if not config.PING_USER_ID:
-        log("note: PING_USER_ID not set — ping will tag the plain text "
+        log("note: PING_USER_ID not set, ping will tag the plain text "
             f"'{config.PING_USER_NAME}' instead of a real @mention.")
     if problems:
         for p in problems:
             log(f"CONFIG ERROR: {p}")
         return 1
-    log(f"preflight OK — channel={config.MCP_CHANNEL_ID}, sheet={config.SHEET_ID}")
+    log(f"preflight OK: channel={config.MCP_CHANNEL_ID}, sheet={config.SHEET_ID}")
     return 0
 
 
@@ -400,20 +400,20 @@ def _smoke() -> int:
 
     print("→ post_message", flush=True)
     r = post_message(
-        text="[smoke test] please ignore — MCP end-to-end check.",
+        text="[smoke test] please ignore (MCP end-to-end check).",
         source="https://github.com/MystenLabs/walrus/issues/3443",
         product="Walrus", type="Bug", priority="Low", raised_by="smoke",
     )
     print(r + "\n", flush=True)
     m = re.search(r"#([\w-]+)", r)
     if not m:
-        print("could not parse an ID from post_message — stopping.", flush=True)
+        print("could not parse an ID from post_message, stopping.", flush=True)
         return 1
     rid = m.group(1)
 
     for label, fn in (
         ("check_status", lambda: check_status(rid)),
-        ("ping", lambda: ping(rid, note="(smoke test — ignore)")),
+        ("ping", lambda: ping(rid, note="(smoke test, ignore)")),
         ("mark_solved", lambda: mark_solved(rid)),
         ("check_status (after solve)", lambda: check_status(rid)),
         ("weekly_report (preview)", lambda: weekly_report(post=False)),
@@ -444,7 +444,7 @@ def _smoke() -> int:
         except Exception as exc:
             print(f"  ERROR cleaning #{rid2}: {exc}", flush=True)
 
-    print(f"=== SMOKE DONE — full cycle on #{rid}, artifacts cleaned. ===", flush=True)
+    print(f"=== SMOKE DONE: full cycle on #{rid}, artifacts cleaned. ===", flush=True)
     return 0
 
 
@@ -481,7 +481,7 @@ def _run_http() -> int:
     auth. Endpoint: http://<host>:<port>/mcp ; health: GET /healthz."""
     token = os.environ.get("MCP_HTTP_TOKEN", "").strip()
     if not token:
-        log("REFUSING to start: MCP_HTTP_TOKEN is not set — this endpoint can post to "
+        log("REFUSING to start: MCP_HTTP_TOKEN is not set. This endpoint can post to "
             "Slack and write the sheet, so it must not be exposed without a token.")
         return 1
     if _check() != 0:
