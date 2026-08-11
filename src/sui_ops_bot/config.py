@@ -48,6 +48,9 @@ BACKFILL_HOURS = int(os.environ.get("BACKFILL_HOURS", "24"))
 AGING_DAYS = int(os.environ.get("AGING_DAYS", "3"))
 AUDIT_LOG_PATH = os.environ.get("AUDIT_LOG_PATH", "audit.jsonl")
 MIN_MESSAGE_CHARS = int(os.environ.get("MIN_MESSAGE_CHARS", "25"))
+# Hard cap on the Question Summary the bot writes, so the sheet stays a scannable
+# one-liner even if the model rambles. The prompt asks for shorter; this is the net.
+SUMMARY_MAX_CHARS = int(os.environ.get("SUMMARY_MAX_CHARS", "110"))
 
 # Optional identity override for the bot's own messages (needs the
 # chat:write.customize scope). Useful when a renamed app still shows a stale name.
