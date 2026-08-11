@@ -91,6 +91,32 @@ def platform_from_source(source: str) -> str:
     return ""
 
 
+def resolve_platform(llm_platform: str, link: str = "", source_channel: str = "") -> str:
+    """The true source medium, not the Slack transport.
+
+    Every tracked item reaches the channel through Slack, so the classifier often
+    labels a forwarded message 'Slack' even though it started on Telegram, Discord,
+    or GitHub. Prefer a concrete origin inferred from a real (non-Slack) link or
+    venue string; otherwise trust the model's origin, but drop a bare 'Slack'
+    verdict (the transport) and leave the platform blank instead of mislabeling."""
+    for src in (link, source_channel):
+        p = platform_from_source(src)
+        if p and p != "Slack":
+            return p
+    p = (llm_platform or "").strip()
+    return "" if p.lower() == "slack" else p
+
+
+def clip_summary(text: str, limit: int) -> str:
+    """A tidy one-line summary: collapse whitespace, and if longer than ``limit``
+    trim at a word boundary with an ellipsis so the sheet stays readable."""
+    t = " ".join((text or "").split())
+    if len(t) <= limit:
+        return t
+    cut = t[:limit].rsplit(" ", 1)[0].rstrip(",;:.")
+    return (cut or t[:limit]).rstrip() + "…"
+
+
 def shared_attachment(event: dict) -> dict:
     """Return the first forwarded/shared message attachment on a Slack event, or {}.
 

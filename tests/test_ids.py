@@ -1,6 +1,7 @@
 from sui_ops_bot import config
 from sui_ops_bot.ids import (
     clean_channel,
+    clip_summary,
     effective_text,
     infer_channel,
     is_substantive,
@@ -8,6 +9,7 @@ from sui_ops_bot.ids import (
     norm_id,
     parse_ids,
     platform_from_source,
+    resolve_platform,
     shared_attachment,
 )
 from sui_ops_bot.logutil import current_window
@@ -57,6 +59,51 @@ class TestInferChannel:
         assert infer_channel("", {}) == ""
         assert infer_channel("n/a", None) == ""
         assert infer_channel("", {"author_name": "Jane"}) == ""
+
+
+class TestResolvePlatform:
+    def test_non_slack_link_wins_over_slack_verdict(self):
+        # The bug: forwarded via Slack, but the real origin is GitHub.
+        assert resolve_platform("Slack", "https://github.com/MystenLabs/sui/pull/9") == "GitHub"
+
+    def test_bare_slack_verdict_dropped_when_link_is_slack(self):
+        # Slack is the transport, not the origin; a slack archive link is not an origin.
+        assert resolve_platform("Slack", "https://team.slack.com/archives/C1/p1") == ""
+
+    def test_llm_origin_kept_when_only_transport_link(self):
+        assert resolve_platform("Telegram", "https://team.slack.com/archives/C1/p1") == "Telegram"
+
+    def test_venue_text_infers_origin(self):
+        assert resolve_platform("", "", "Sui Developer Forum thread") == "Sui Forum"
+
+    def test_plain_slack_verdict_no_link_is_blank(self):
+        assert resolve_platform("Slack", "", "Sui Developer Relations") == ""
+
+    def test_real_origin_passthrough(self):
+        assert resolve_platform("GitHub", "") == "GitHub"
+        assert resolve_platform("", "https://t.me/xyz") == "Telegram"
+
+    def test_all_empty_is_blank(self):
+        assert resolve_platform("", "", "") == ""
+
+
+class TestClipSummary:
+    def test_short_summary_unchanged(self):
+        assert clip_summary("RPC endpoint unreachable", 90) == "RPC endpoint unreachable"
+
+    def test_collapses_whitespace_and_newlines(self):
+        assert clip_summary("line one\n  line   two", 90) == "line one line two"
+
+    def test_long_summary_trimmed_at_word_boundary(self):
+        s = ("Boar Network inquiring about Guardian roadmap and Guardian role and Bitcoin node "
+             "infrastructure and requesting direct contact with the Foundation owner")
+        out = clip_summary(s, 90)
+        assert len(out) <= 91  # limit plus the ellipsis
+        assert out.endswith("…")
+        assert " " in out and not out[:-1].endswith(" ")  # no dangling space before ellipsis
+
+    def test_empty(self):
+        assert clip_summary("", 90) == ""
 
 
 class TestNormId:

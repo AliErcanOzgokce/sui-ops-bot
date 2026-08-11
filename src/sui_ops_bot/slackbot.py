@@ -32,7 +32,15 @@ from . import config, reports
 from .attachments import download_image, image_refs
 from .classify import classify_message, judge_resolution
 from .dedup import dedup_key, find_duplicate
-from .ids import effective_text, infer_channel, is_substantive, match_enum, shared_attachment
+from .ids import (
+    clip_summary,
+    effective_text,
+    infer_channel,
+    is_substantive,
+    match_enum,
+    resolve_platform,
+    shared_attachment,
+)
 from .logutil import audit, current_window, log, today_str
 from .sheet import Row, SheetStore
 from .slack_client import (
@@ -119,7 +127,7 @@ def classify_and_log(channel: str, ts: str, user: str, text: str,
     # Duplicate / re-forward check against the open board. An exact key match (a
     # shared GitHub issue URL) annotates the existing row instead of opening a
     # second one; a similarity-only match still logs but flags the possible dup.
-    summary = data.get("question_summary", "")
+    summary = clip_summary(data.get("question_summary", ""), config.SUMMARY_MAX_CHARS)
     new_link = data.get("link", "") or fwd_url or link
     match = find_duplicate(dedup_key(text, new_link), product, summary, store.open_rows())
     if match and match.kind == "exact":
@@ -131,7 +139,8 @@ def classify_and_log(channel: str, ts: str, user: str, text: str,
         # ID is left to the sheet's own formula (set inside store.append).
         "Date Asked": today_str(),
         "Window": config.WINDOW_DEFAULT or current_window(),
-        "Platform": data.get("platform", ""),
+        "Platform": resolve_platform(data.get("platform", ""), new_link,
+                                     data.get("source_channel", "")),
         "Channel": infer_channel(data.get("source_channel", ""), forwarded),
         "Question Summary": summary,
         "Link": new_link,

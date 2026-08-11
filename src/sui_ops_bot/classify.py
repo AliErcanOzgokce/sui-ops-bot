@@ -42,8 +42,8 @@ CLASSIFY_TOOL = {
                 "type": "boolean",
                 "description": "True only if this is a NEW developer question/issue being escalated for help (not chatter, an answer, an ack, or an already-in-progress thread).",
             },
-            "question_summary": {"type": "string", "description": "One-line summary of the developer question/issue."},
-            "platform": {"type": "string", "description": "The SOURCE MEDIUM the question came in on: one of Telegram, Discord, GitHub, Sui Forum, X, Slack, Email, Other. Empty if unclear."},
+            "question_summary": {"type": "string", "description": "A short one-line summary of the core ask, at most about 100 characters (roughly 12 to 15 words). Capture the single main question; do NOT enumerate every sub-point or paste the message."},
+            "platform": {"type": "string", "description": "The ORIGINAL source medium the question started on: one of Telegram, Discord, GitHub, Sui Forum, X, Email, Other. This channel is on Slack, so Slack is only the transport for a forward, NEVER the origin: never answer 'Slack' for a forwarded message. Infer the true origin from the content and any links; leave empty if genuinely unclear."},
             "source_channel": {"type": "string", "description": "The specific channel/venue name if identifiable (e.g. 'TG - Overflow DeepBook', 'GitHub Issues (repo #123)', 'Sui Developer Forum'). Empty if unknown."},
             "link": {"type": "string", "description": "Any URL in the message, else empty."},
             "raised_by": {"type": "string", "description": "Who originally raised it if named in the message, else empty."},
@@ -184,7 +184,12 @@ def classify_system() -> str:
         "- \"How do I sign a transaction with the Slush wallet from dapp-kit?\" -> "
         "is_escalation true, Product Slush, Type Question.\n"
         "\n"
-        "'platform' is the source medium (Telegram/Discord/GitHub/Sui Forum/X/Slack/Email/Other); "
+        "Keep 'question_summary' to one short line (about 100 characters), the single core "
+        "ask, not a list of every sub-point. "
+        "'platform' is the ORIGINAL source medium (Telegram/Discord/GitHub/Sui Forum/X/Email/"
+        "Other). This channel runs on Slack, so Slack is only the transport of a forward, never "
+        "the origin: never answer 'Slack' for a forwarded message, infer the real origin from "
+        "the content and links, and leave it empty if unclear. "
         "'source_channel' is the specific venue name. Classify 'product' (the ecosystem "
         f"product/area, one of {config.PRODUCTS}) and 'type' (the kind of ask, one of "
         f"{config.TYPES}). Constrain priority to {config.PRIORITIES}."
