@@ -56,6 +56,92 @@ def group_by_product(rows) -> dict[str, list]:
     return ordered
 
 
+def group_followups(rows, days: int, today: date | None = None) -> dict[str, list]:
+    """Open rows that name a Waiting On party and have gone unanswered for more
+    than ``days``, grouped by party. Parties come back in the canonical order
+    (internal team, organizer, reporter), each party's items oldest first. Rows
+    with no party or not yet stale are dropped."""
+    buckets: dict[str, list] = {}
+    for r in rows:
+        party = (r.values.get("Waiting On", "") or "").strip()
+        if not party:
+            continue
+        age = age_days(r.values.get("Date Asked", ""), today)
+        if age is None or age <= days:
+            continue
+        buckets.setdefault(party, []).append(r)
+    for items in buckets.values():
+        items.sort(key=lambda r: -(age_days(r.values.get("Date Asked", ""), today) or 0))
+    ordered: dict[str, list] = {}
+    for p in config.WAITING_ON:
+        key = next((k for k in buckets if k.lower() == p.lower()), None)
+        if key:
+            ordered[key] = buckets.pop(key)
+    for extra in sorted(buckets):
+        ordered[extra] = buckets.pop(extra)
+    return ordered
+
+
+def followups_report(store, days: int | None = None, linker=None,
+                     today: date | None = None) -> str:
+    """Text digest of stale follow-ups grouped by the party we are waiting on."""
+    days = config.AGING_DAYS if days is None else days
+    store.reload()
+    grouped = group_followups(store.open_rows(), days, today=today)
+    if not grouped:
+        return f":white_check_mark: No follow-ups waiting over {days} days."
+    lines = [f":bell: *Follow-ups waiting over {days} days*"]
+    for party, rows in grouped.items():
+        lines.append(f"\n*Waiting on {party}* ({len(rows)})")
+        for r in rows:
+            age = age_days(r.values.get("Date Asked", ""), today)
+            agestr = f"{age}d" if age is not None else "?"
+            lines.append(f"• *#{r.values.get('ID','?')}* [{_badge(r)}, {agestr}] "
+                         f"{r.values.get('Question Summary','')} <{_link(store, r, linker)}|↗>")
+    return "\n".join(lines)
+
+
+# How many items the interactive digest renders before truncating, to stay under
+# Slack's 50-block message limit (each item is one section block with a button).
+_FOLLOWUPS_BLOCK_CAP = 40
+
+
+def followups_blocks(store, days: int | None = None, linker=None,
+                     today: date | None = None) -> list | None:
+    """Block Kit digest: one section per stale item with a one-tap Nudge button
+    (its value is the item's message ts, so the action handler can ping the owner
+    in the original thread). Returns None when nothing is stale."""
+    days = config.AGING_DAYS if days is None else days
+    store.reload()
+    grouped = group_followups(store.open_rows(), days, today=today)
+    if not grouped:
+        return None
+    blocks = [{"type": "section", "text": {"type": "mrkdwn",
+        "text": f":bell: *Follow-ups waiting over {days} days*"}}]
+    shown, total = 0, sum(len(v) for v in grouped.values())
+    for party, rows in grouped.items():
+        blocks.append({"type": "context", "elements": [{"type": "mrkdwn",
+            "text": f"*Waiting on {party}* ({len(rows)})"}]})
+        for r in rows:
+            if shown >= _FOLLOWUPS_BLOCK_CAP:
+                break
+            age = age_days(r.values.get("Date Asked", ""), today)
+            agestr = f"{age}d" if age is not None else "?"
+            blocks.append({"type": "section",
+                "text": {"type": "mrkdwn",
+                    "text": f"*#{r.values.get('ID','?')}* [{_badge(r)}, {agestr}] "
+                            f"{r.values.get('Question Summary','')} "
+                            f"(<{_link(store, r, linker)}|open>)"},
+                "accessory": {"type": "button", "action_id": "row_nudge",
+                    "text": {"type": "plain_text", "text": ":bell: Nudge"},
+                    "value": r.original_ts or str(r.row_number)}})
+            shown += 1
+    if shown < total:
+        blocks.append({"type": "context", "elements": [{"type": "mrkdwn",
+            "text": f"…and {total - shown} more not shown."}]})
+    return blocks
+
+
 def _badge(row) -> str:
     """'Product · Type' badge for a row, tolerating blanks."""
     parts = [p for p in (row.values.get("Product", ""), row.values.get("Type", "")) if p]
