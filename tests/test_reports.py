@@ -139,6 +139,15 @@ class TestEscalationNoteBlocks:
         assert "*#7*" in section["text"]["text"]
         assert "Seal · Question" in section["text"]["text"]
 
+    def test_no_dup_callout_by_default(self):
+        blocks = reports.escalation_note_blocks("7", "Seal", "Question", "https://x", "1")
+        assert not any("possible duplicate" in str(b).lower() for b in blocks)
+
+    def test_dup_of_renders_possible_duplicate_line(self):
+        blocks = reports.escalation_note_blocks("9", "SDK", "Bug", "https://x", "1", dup_of="7")
+        text = " ".join(str(b) for b in blocks).lower()
+        assert "possible duplicate of" in text and "#7" in text
+
 
 class TestStatusReport:
     def test_by_product_breakdown(self):
