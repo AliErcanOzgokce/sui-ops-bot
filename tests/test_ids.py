@@ -2,6 +2,7 @@ from sui_ops_bot import config
 from sui_ops_bot.ids import (
     clean_channel,
     effective_text,
+    infer_channel,
     is_substantive,
     match_enum,
     norm_id,
@@ -33,6 +34,29 @@ class TestCleanChannel:
     def test_real_venue_kept(self):
         assert clean_channel("TG - Overflow DeepBook") == "TG - Overflow DeepBook"
         assert clean_channel("  GitHub Issues  ") == "GitHub Issues"
+
+
+class TestInferChannel:
+    def test_content_venue_wins(self):
+        # A venue inferred from content is used as-is; the forward is not consulted.
+        fwd = {"channel_name": "overflow-deepbook"}
+        assert infer_channel("TG - Overflow DeepBook", fwd) == "TG - Overflow DeepBook"
+
+    def test_falls_back_to_forward_channel_name(self):
+        fwd = {"channel_name": "overflow-deepbook"}
+        assert infer_channel("", fwd) == "#overflow-deepbook"
+
+    def test_placeholder_content_falls_back_to_forward(self):
+        fwd = {"channel_name": "tg-walrus-mirror"}
+        assert infer_channel("unknown", fwd) == "#tg-walrus-mirror"
+
+    def test_forward_name_leading_hash_normalized(self):
+        assert infer_channel("", {"channel_name": "#already-hashed"}) == "#already-hashed"
+
+    def test_unknown_stays_blank(self):
+        assert infer_channel("", {}) == ""
+        assert infer_channel("n/a", None) == ""
+        assert infer_channel("", {"author_name": "Jane"}) == ""
 
 
 class TestNormId:

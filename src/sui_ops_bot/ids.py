@@ -58,6 +58,21 @@ def clean_channel(value: str) -> str:
     return "" if v.lower() in _CHANNEL_PLACEHOLDERS else v
 
 
+def infer_channel(source_channel: str, forwarded: dict | None = None) -> str:
+    """The venue to write to the Channel column, without ever interrogating.
+
+    Content-inferred venue first (cleaned of placeholders). When content yields
+    nothing, fall back to the forward's own original Slack channel name (from the
+    shared attachment's ``channel_name``), normalized to ``#name``. When both are
+    empty the venue is genuinely unknown, so this returns a blank; the auto-tracker
+    leaves the cell empty rather than asking."""
+    venue = clean_channel(source_channel)
+    if venue:
+        return venue
+    name = ((forwarded or {}).get("channel_name") or "").strip().lstrip("#").strip()
+    return f"#{name}" if name else ""
+
+
 def platform_from_source(source: str) -> str:
     """Infer the source medium (Telegram/GitHub/...) from a link or venue string."""
     s = (source or "").lower()
