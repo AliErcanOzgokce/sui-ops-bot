@@ -55,6 +55,15 @@ What you see:
 Note: rows that existed before this feature was added are left as "Unclassified".
 Only new questions get product and type. There is no bulk back-fill of old rows.
 
+**Screenshots are read too.** When a message carries an image (a screenshot of an
+error, a stack trace, a console), the bot downloads it and passes it to Claude
+along with any text, so an image-first report gets classified on what the picture
+actually shows. This works the same whether the image is pasted directly or comes
+in on a forwarded message, and a message that is only an image (little or no text)
+is no longer dropped by the short-text filter. Reading images needs a
+vision-capable model; the default `claude-haiku-4-5` is one. The raw image bytes
+are never written to the logs or the audit trail.
+
 ## 3. The commands a lead uses
 
 Two kinds. Quick ones you type in Slack, and richer ones you ask Claude.
