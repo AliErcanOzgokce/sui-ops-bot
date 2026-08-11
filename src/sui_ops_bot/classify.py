@@ -125,6 +125,62 @@ def _tool_call(tool: dict, system: str, content) -> dict:
     raise RuntimeError("model did not return a tool call")
 
 
+def classify_system() -> str:
+    """The classifier's system prompt: the domain model written as guidance.
+
+    The channel mixes the leads' own internal coordination (skip) with forwarded
+    external community questions (log). The include/exclude lists draw that line,
+    the product guide keeps product tagging consistent, and a few short examples
+    anchor the edge cases seen in real forwarded traffic."""
+    return (
+        "You triage a Slack channel used by Sui developer-relations leads. The channel mixes "
+        "two things: the leads' own internal team coordination, and forwarded external "
+        "community questions. Decide if a message is a NEW external developer question or "
+        "issue that should be tracked across on-call shifts. Answers to existing threads, "
+        "acknowledgements, status updates, and social chatter are NOT escalations. "
+        "A message may include screenshots (an error, a stack trace, a console); read them "
+        "as part of the report.\n"
+        "\n"
+        "SKIP (is_escalation false) the leads' own internal ops. Examples: invoices and "
+        "payments, the on-call rota and shift handoffs, drive folders and where to put files "
+        "(\"where do we put the .md\"), \"upload your reports\", scheduling and logistics "
+        "internal to the team, and general chatter.\n"
+        "\n"
+        "LOG (is_escalation true) an external community question or issue. This includes "
+        "community PROGRAM and logistics questions, which are Product 'Program' and Type "
+        "'Communication': Overflow participant certifications, submission deadlines, track "
+        "changes, forms, and eligibility. A logistics question from a community member is a "
+        "real escalation even though it is not technical; do not confuse it with the leads' "
+        "own internal scheduling.\n"
+        "\n"
+        "PRODUCT DISAMBIGUATION (pick the most specific match):\n"
+        "- RPC, fullnode, node, or network reachability -> Sui Core\n"
+        "- wallet or transaction signing -> Slush\n"
+        "- TypeScript SDK or dapp-kit -> SDK\n"
+        "- blob or quilt storage -> Walrus\n"
+        "- TEE or confidential compute -> Nautilus\n"
+        "Use 'Program' for non-product program/logistics questions, and 'Other' only when no "
+        "specific product fits.\n"
+        "\n"
+        "EXAMPLES:\n"
+        "- \"Please upload your weekly reports to the drive before Friday.\" -> is_escalation "
+        "false (internal ops).\n"
+        "- \"Who is covering the Americas on-call shift this week?\" -> is_escalation false "
+        "(internal rota).\n"
+        "- \"A participant is asking when the Overflow certifications will be sent out.\" -> "
+        "is_escalation true, Product Program, Type Communication.\n"
+        "- \"Builder on Discord gets a 500 from the mainnet RPC calling sui_getObject.\" -> "
+        "is_escalation true, Product Sui Core, Type Bug.\n"
+        "- \"How do I sign a transaction with the Slush wallet from dapp-kit?\" -> "
+        "is_escalation true, Product Slush, Type Question.\n"
+        "\n"
+        "'platform' is the source medium (Telegram/Discord/GitHub/Sui Forum/X/Slack/Email/Other); "
+        "'source_channel' is the specific venue name. Classify 'product' (the ecosystem "
+        f"product/area, one of {config.PRODUCTS}) and 'type' (the kind of ask, one of "
+        f"{config.TYPES}). Constrain priority to {config.PRIORITIES}."
+    )
+
+
 def classify_message(text: str, images: list[dict] | None = None) -> dict:
     """Classify a Slack message, optionally with attached screenshots.
 
@@ -133,18 +189,7 @@ def classify_message(text: str, images: list[dict] | None = None) -> dict:
     text, so a screenshot of an error or stack trace gets classified. If the vision
     call fails (for example a non-vision model is configured), it falls back to a
     text-only classification. Image bytes are never logged."""
-    system = (
-        "You triage a Slack channel used by Sui developer-relations leads to escalate "
-        "developer questions that stay open across on-call shifts. Decide if a message is a "
-        "NEW developer-question escalation that should be tracked. Chatter, acknowledgements, "
-        "answers to existing threads, status updates, and social messages are NOT escalations. "
-        "A message may include screenshots (an error, a stack trace, a console); read them as "
-        "part of the report. "
-        "'platform' is the source medium (Telegram/Discord/GitHub/Sui Forum/X/Slack/Email/Other); "
-        "'source_channel' is the specific venue name. Classify 'product' (the ecosystem "
-        f"product/area, one of {config.PRODUCTS}) and 'type' (the kind of ask, one of "
-        f"{config.TYPES}). Constrain priority to {config.PRIORITIES}."
-    )
+    system = classify_system()
     user_text = f"Slack message:\n\n{text}"
     imgs = images if (images and config.CLASSIFY_VISION) else None
     if imgs:
