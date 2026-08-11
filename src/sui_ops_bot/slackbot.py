@@ -62,18 +62,21 @@ def download_images(refs: list, limit: int = 4) -> list[dict]:
     return out
 
 
-def annotate_duplicate(row: Row, new_ts: str, channel: str) -> None:
+def annotate_duplicate(row: Row, new_ts: str, channel: str, summary: str = "") -> None:
     """An exact re-report of an already-open row: annotate that row instead of
-    opening a second one, and point the new message at it. Idempotent: each
-    incoming ts is recorded once in Bot Refs, so a backfill re-scan does not stack
-    duplicate notes."""
+    opening a second one, and point the new message at it. The new report's own
+    summary is folded into the note so its wording is never lost, only its
+    separate row. Idempotent: the `dupes` list in Bot Refs is the load-bearing
+    guard (the re-report's ts is never added to the ts index), so a backfill
+    re-scan finds the ts already recorded and does not stack notes."""
     dupes = list(row.refs.get("dupes", []))
     if new_ts in dupes:
         return
     dupes.append(new_ts)
     rid = row.values.get("ID", "?")
     existing = row.values.get(store.notes_col, "")
-    stamp = f"🔁 Also reported ({today_str()}), not logged as a new row."
+    detail = f": {summary}" if summary else ", not logged as a new row."
+    stamp = f"🔁 Also reported ({today_str()}){detail}"
     store.set(row.row_number, {store.notes_col: stamp + (f"\n{existing}" if existing else "")})
     store.set_refs(row.row_number, dupes=dupes)
     try:
@@ -119,7 +122,7 @@ def classify_and_log(channel: str, ts: str, user: str, text: str,
     new_link = data.get("link", "") or fwd_url or link
     match = find_duplicate(dedup_key(text, new_link), product, summary, store.open_rows())
     if match and match.kind == "exact":
-        annotate_duplicate(match.row, ts, channel)
+        annotate_duplicate(match.row, ts, channel, summary=summary)
         return
     dup_of = match.row.values.get("ID") if match else None
 
