@@ -31,6 +31,7 @@ from slack_bolt.adapter.socket_mode import SocketModeHandler
 from . import config, reports
 from .attachments import download_image, image_refs
 from .classify import classify_message, judge_resolution
+from .dedup import dedup_key, find_duplicate
 from .ids import clean_channel, effective_text, is_substantive, shared_attachment
 from .logutil import audit, current_window, log, today_str
 from .sheet import Row, SheetStore
@@ -61,6 +62,29 @@ def download_images(refs: list, limit: int = 4) -> list[dict]:
     return out
 
 
+def annotate_duplicate(row: Row, new_ts: str, channel: str) -> None:
+    """An exact re-report of an already-open row: annotate that row instead of
+    opening a second one, and point the new message at it. Idempotent: each
+    incoming ts is recorded once in Bot Refs, so a backfill re-scan does not stack
+    duplicate notes."""
+    dupes = list(row.refs.get("dupes", []))
+    if new_ts in dupes:
+        return
+    dupes.append(new_ts)
+    rid = row.values.get("ID", "?")
+    existing = row.values.get(store.notes_col, "")
+    stamp = f"🔁 Also reported ({today_str()}), not logged as a new row."
+    store.set(row.row_number, {store.notes_col: stamp + (f"\n{existing}" if existing else "")})
+    store.set_refs(row.row_number, dupes=dupes)
+    try:
+        post(channel=channel, thread_ts=new_ts,
+             text=f":twisted_rightwards_arrows: This looks like *#{rid}*, already tracked. "
+                  f"Not adding a duplicate. (<{store.row_link(row.row_number)}|open row>)")
+    except Exception as exc:
+        log(f"WARN could not post duplicate note: {exc}")
+    log(f"exact duplicate of #{rid}: annotated row {row.row_number}, not appended")
+
+
 def classify_and_log(channel: str, ts: str, user: str, text: str,
                      forwarded: dict | None = None, images: list[dict] | None = None) -> None:
     try:
@@ -87,14 +111,26 @@ def classify_and_log(channel: str, ts: str, user: str, text: str,
     fwd_url = (forwarded.get("from_url") or "").strip()
     product = data.get("product", config.PRODUCT_DEFAULT) or config.PRODUCT_DEFAULT
     qtype = data.get("type", config.TYPE_DEFAULT) or config.TYPE_DEFAULT
+
+    # Duplicate / re-forward check against the open board. An exact key match (a
+    # shared GitHub issue URL) annotates the existing row instead of opening a
+    # second one; a similarity-only match still logs but flags the possible dup.
+    summary = data.get("question_summary", "")
+    new_link = data.get("link", "") or fwd_url or link
+    match = find_duplicate(dedup_key(text, new_link), product, summary, store.open_rows())
+    if match and match.kind == "exact":
+        annotate_duplicate(match.row, ts, channel)
+        return
+    dup_of = match.row.values.get("ID") if match else None
+
     fields = {
         # ID is left to the sheet's own formula (set inside store.append).
         "Date Asked": today_str(),
         "Window": config.WINDOW_DEFAULT or current_window(),
         "Platform": data.get("platform", ""),
         "Channel": clean_channel(data.get("source_channel", "")),
-        "Question Summary": data.get("question_summary", ""),
-        "Link": data.get("link", "") or fwd_url or link,
+        "Question Summary": summary,
+        "Link": new_link,
         "Raised By": data.get("raised_by", "") or fwd_author or poster_name,
         # The lead who logged it owns it (matches the sheet's old convention), and
         # their uid is kept in Bot Refs for @-mentions.
@@ -117,10 +153,13 @@ def classify_and_log(channel: str, ts: str, user: str, text: str,
     rid = row.values.get("ID", "?")
     row_link = store.row_link(row.row_number)
     try:
+        dup_note = f" Possible duplicate of #{dup_of}." if dup_of else ""
         posted = post(
             channel=channel, thread_ts=ts,
-            text=f":pushpin: Logged as #{rid} ({product} · {qtype}). Discard or mark solved below.",
-            blocks=reports.escalation_note_blocks(rid, product, qtype, row_link, value=ts),
+            text=(f":pushpin: Logged as #{rid} ({product} · {qtype}).{dup_note} "
+                  f"Discard or mark solved below."),
+            blocks=reports.escalation_note_blocks(rid, product, qtype, row_link,
+                                                  value=ts, dup_of=dup_of),
         )
         store.set_refs(row.row_number, anchor_ts=posted["ts"])
     except Exception as exc:
