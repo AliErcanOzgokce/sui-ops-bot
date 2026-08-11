@@ -148,11 +148,11 @@ def _badge(row) -> str:
     return " · ".join(parts) if parts else "Unclassified"
 
 
-def _link(store, row, linker) -> str:
-    link = row.values.get("Link", "")
-    if not link and row.original_ts and row.slack_channel and linker:
-        link = linker(row.slack_channel, row.original_ts)
-    return link or store.row_link(row.row_number)
+def _link(store, row, linker=None) -> str:
+    """The arrow target for a report row: always the Google Sheet row, so it is
+    always openable (the Link column can hold a stale or multi-URL value that
+    Slack will not linkify). The linker arg is kept for call-site compatibility."""
+    return store.row_link(row.row_number)
 
 
 # ---------------------------------------------------------------------------
@@ -219,7 +219,7 @@ def status_report(store) -> str:
     lines.append("*By product:* " + ", ".join(f"{p}: {len(rs)}" for p, rs in by_product.items()))
     lines.append(f"*Aging (>{config.AGING_DAYS}d, still open):* {aging}")
     if oldest is not None:
-        link = oldest.values.get("Link", "") or store.row_link(oldest.row_number)
+        link = store.row_link(oldest.row_number)
         lines.append(f"*Oldest:* {oldest.values.get('ID')} ({oldest_age}d): "
                      f"{oldest.values.get('Question Summary','')} <{link}|↗>")
     return "\n".join(lines)

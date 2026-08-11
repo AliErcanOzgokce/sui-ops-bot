@@ -182,6 +182,24 @@ class TestEscalationNoteBlocks:
         assert ids == {"row_discard", "row_solved"}
 
 
+class TestReportArrowTargetsSheetRow:
+    def test_open_report_arrow_is_the_sheet_row(self):
+        # The arrow always points to the Google Sheet row, never a stale/broken
+        # Link value, so it is always openable.
+        rows = [FakeRow("1", product="Walrus", status="Escalated", row_number=7,
+                        link="https://github.com/x/y/issues/1 https://slack/dead", ts="123", channel="C1")]
+        out = reports.open_report(FakeStore(rows), linker=_link)
+        assert "https://sheet/row/7" in out
+        # the broken multi-url Link value is not used as the arrow target
+        assert "https://slack/dead" not in out
+
+    def test_aging_report_arrow_is_the_sheet_row(self):
+        old = [FakeRow("1", status="Escalated", date_asked="2026-07-01", row_number=9,
+                       link="https://whatever/link")]
+        out = reports.aging_report(FakeStore(old), linker=_link)
+        assert "https://sheet/row/9" in out
+
+
 class TestFollowups:
     TODAY = date(2026, 8, 10)
 
