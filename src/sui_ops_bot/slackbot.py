@@ -29,6 +29,7 @@ import traceback
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 
 from . import config, reports
+from .attachments import download_image, image_refs
 from .classify import classify_message, judge_resolution
 from .ids import clean_channel, effective_text, is_substantive, shared_attachment
 from .logutil import audit, current_window, log, today_str
@@ -46,10 +47,24 @@ _bot_user_id: str | None = None
 
 
 # -- Feature 1: auto-log new escalations ------------------------------------
+def download_images(refs: list, limit: int = 4) -> list[dict]:
+    """Fetch the bytes for each image reference with the bot token, as
+    ``{data, mime}`` for the classifier. Failures are logged without any bytes and
+    skipped, so a broken download never blocks classification. At most ``limit``
+    images are fetched to bound work on a message with many attachments."""
+    out = []
+    for ref in refs[:limit]:
+        try:
+            out.append({"data": download_image(ref, config.SLACK_BOT_TOKEN), "mime": ref.mime})
+        except Exception as exc:
+            log(f"WARN could not download image ({ref.mime}): {exc}")
+    return out
+
+
 def classify_and_log(channel: str, ts: str, user: str, text: str,
-                     forwarded: dict | None = None) -> None:
+                     forwarded: dict | None = None, images: list[dict] | None = None) -> None:
     try:
-        result = classify_message(text)
+        result = classify_message(text, images=images)
     except Exception as exc:
         log(f"ERROR classify failed: {exc}")
         return
@@ -241,11 +256,15 @@ def on_message(event, logger):
         # A forwarded message has empty top-level text; its content lives in a
         # shared attachment. effective_text merges both so a plain forward tracks.
         eff = effective_text(event)
-        if not is_substantive(eff, config.MIN_MESSAGE_CHARS):
+        # An image (direct or forwarded) counts as substance on its own, so an
+        # image-only report is not dropped for lack of text.
+        refs = image_refs(event)
+        if not is_substantive(eff, config.MIN_MESSAGE_CHARS, has_image=bool(refs)):
             return
         if store.ts_tracked(ts):
             return
-        classify_and_log(channel, ts, user, eff, forwarded=shared_attachment(event))
+        classify_and_log(channel, ts, user, eff, forwarded=shared_attachment(event),
+                         images=download_images(refs))
     except Exception:
         log("ERROR in on_message:\n" + traceback.format_exc())
 
@@ -367,11 +386,13 @@ def backfill() -> None:
                     if store.ts_tracked(ts):
                         continue
                     eff = effective_text(m)
-                    if not is_substantive(eff, config.MIN_MESSAGE_CHARS):
+                    refs = image_refs(m)
+                    if not is_substantive(eff, config.MIN_MESSAGE_CHARS, has_image=bool(refs)):
                         continue
                     scanned += 1
                     classify_and_log(channel, ts, m.get("user", ""), eff,
-                                     forwarded=shared_attachment(m))
+                                     forwarded=shared_attachment(m),
+                                     images=download_images(refs))
                 cursor = resp.get("response_metadata", {}).get("next_cursor")
                 if not cursor:
                     break
