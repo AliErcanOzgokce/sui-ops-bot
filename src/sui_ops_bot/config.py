@@ -88,9 +88,17 @@ TYPES = ["Question", "Open PR", "Bug", "Feature Request", "Communication"]
 
 PRIORITIES = ["High", "Medium", "Low"]
 
+# Who an open item is waiting on. A light who-are-we-waiting-on tag, not team
+# routing: 'organizer' for program/logistics, 'internal team' for a technical
+# escalation, 'reporter' when we need more info back. Inferred at classification
+# time and left blank when unclear.
+WAITING_ON = ["internal team", "organizer", "reporter"]
+
 # Fallback values used when the LLM output cannot be matched to an enum.
 PRODUCT_DEFAULT = "Other"
 TYPE_DEFAULT = "Question"
+# Waiting On is optional: an unknown party is a blank cell, never a guess.
+WAITING_ON_DEFAULT = ""
 
 # ---------------------------------------------------------------------------
 # Sheet schema
@@ -106,7 +114,7 @@ HUMAN_COLUMNS = [
 # Columns the bot ensures exist (auto-added to the header row on boot if missing):
 # the two classification columns, then the three infra columns that let the
 # in-memory index be rebuilt from the sheet after a redeploy.
-CLASSIFICATION_COLUMNS = ["Product", "Type"]
+CLASSIFICATION_COLUMNS = ["Product", "Type", "Waiting On"]
 INFRA_COLUMNS = ["Slack Channel", "Slack TS", "Bot Refs"]
 MANAGED_COLUMNS = CLASSIFICATION_COLUMNS + INFRA_COLUMNS
 

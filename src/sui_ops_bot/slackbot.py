@@ -32,7 +32,7 @@ from . import config, reports
 from .attachments import download_image, image_refs
 from .classify import classify_message, judge_resolution
 from .dedup import dedup_key, find_duplicate
-from .ids import clean_channel, effective_text, is_substantive, shared_attachment
+from .ids import clean_channel, effective_text, is_substantive, match_enum, shared_attachment
 from .logutil import audit, current_window, log, today_str
 from .sheet import Row, SheetStore
 from .slack_client import (
@@ -114,6 +114,7 @@ def classify_and_log(channel: str, ts: str, user: str, text: str,
     fwd_url = (forwarded.get("from_url") or "").strip()
     product = data.get("product", config.PRODUCT_DEFAULT) or config.PRODUCT_DEFAULT
     qtype = data.get("type", config.TYPE_DEFAULT) or config.TYPE_DEFAULT
+    waiting_on = match_enum(data.get("waiting_on", ""), config.WAITING_ON, config.WAITING_ON_DEFAULT)
 
     # Duplicate / re-forward check against the open board. An exact key match (a
     # shared GitHub issue URL) annotates the existing row instead of opening a
@@ -142,6 +143,7 @@ def classify_and_log(channel: str, ts: str, user: str, text: str,
         "Status": config.STATUS_ESCALATED,
         "Product": product,
         "Type": qtype,
+        "Waiting On": waiting_on,
         "Date Resolved": "",
         store.notes_col: "",
         "Slack Channel": channel,
