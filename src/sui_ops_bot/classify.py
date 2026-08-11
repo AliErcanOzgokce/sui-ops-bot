@@ -11,9 +11,12 @@ tool, so the output always matches the schema):
 """
 from __future__ import annotations
 
+import base64
+
 from anthropic import Anthropic
 
 from . import config
+from .logutil import log
 
 _client: Anthropic | None = None
 
@@ -76,14 +79,40 @@ RESOLUTION_TOOL = {
 }
 
 
-def _tool_call(tool: dict, system: str, user: str) -> dict:
+def image_block(data: bytes, mime: str) -> dict:
+    """A single Anthropic image content block from raw bytes and a mime type."""
+    return {
+        "type": "image",
+        "source": {
+            "type": "base64",
+            "media_type": mime,
+            "data": base64.standard_b64encode(data).decode("ascii"),
+        },
+    }
+
+
+def assemble_user_content(text: str, images: list[dict] | None):
+    """Build the user-message content for the classifier.
+
+    With no images this returns the plain ``text`` string, exactly as before. With
+    images it returns a list of one image block per image (``{data, mime}``)
+    followed by a single text block when ``text`` is non-empty."""
+    if not images:
+        return text
+    blocks = [image_block(img["data"], img["mime"]) for img in images]
+    if text:
+        blocks.append({"type": "text", "text": text})
+    return blocks
+
+
+def _tool_call(tool: dict, system: str, content) -> dict:
     resp = client().messages.create(
         model=config.ANTHROPIC_MODEL,
         max_tokens=512,
         system=system,
         tools=[tool],
         tool_choice={"type": "tool", "name": tool["name"]},
-        messages=[{"role": "user", "content": user}],
+        messages=[{"role": "user", "content": content}],
     )
     for block in resp.content:
         if block.type == "tool_use":
@@ -96,18 +125,34 @@ def _tool_call(tool: dict, system: str, user: str) -> dict:
     raise RuntimeError("model did not return a tool call")
 
 
-def classify_message(text: str) -> dict:
+def classify_message(text: str, images: list[dict] | None = None) -> dict:
+    """Classify a Slack message, optionally with attached screenshots.
+
+    ``images`` is a list of ``{"data": bytes, "mime": str}``. When present and
+    vision is enabled, each is passed to the model as an image block alongside the
+    text, so a screenshot of an error or stack trace gets classified. If the vision
+    call fails (for example a non-vision model is configured), it falls back to a
+    text-only classification. Image bytes are never logged."""
     system = (
         "You triage a Slack channel used by Sui developer-relations leads to escalate "
         "developer questions that stay open across on-call shifts. Decide if a message is a "
         "NEW developer-question escalation that should be tracked. Chatter, acknowledgements, "
         "answers to existing threads, status updates, and social messages are NOT escalations. "
+        "A message may include screenshots (an error, a stack trace, a console); read them as "
+        "part of the report. "
         "'platform' is the source medium (Telegram/Discord/GitHub/Sui Forum/X/Slack/Email/Other); "
         "'source_channel' is the specific venue name. Classify 'product' (the ecosystem "
         f"product/area, one of {config.PRODUCTS}) and 'type' (the kind of ask, one of "
         f"{config.TYPES}). Constrain priority to {config.PRIORITIES}."
     )
-    return _tool_call(CLASSIFY_TOOL, system, f"Slack message:\n\n{text}")
+    user_text = f"Slack message:\n\n{text}"
+    imgs = images if (images and config.CLASSIFY_VISION) else None
+    if imgs:
+        try:
+            return _tool_call(CLASSIFY_TOOL, system, assemble_user_content(user_text, imgs))
+        except Exception as exc:
+            log(f"WARN vision classify failed, retrying text-only: {exc}")
+    return _tool_call(CLASSIFY_TOOL, system, assemble_user_content(user_text, None))
 
 
 def judge_resolution(question: str, thread_text: str) -> dict:

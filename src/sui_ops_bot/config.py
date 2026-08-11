@@ -27,6 +27,11 @@ SLACK_CHANNEL_IDS = [c.strip() for c in os.environ.get("SLACK_CHANNEL_ID", "").s
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5")
+# Pass screenshots to the classifier. Requires a vision-capable model (the
+# default claude-haiku-4-5 is). Set CLASSIFY_VISION=0 to force text-only if a
+# non-vision model is configured; the classifier also fails soft to text-only on
+# any vision call error.
+CLASSIFY_VISION = os.environ.get("CLASSIFY_VISION", "1").strip().lower() not in ("0", "false", "no", "")
 
 SHEET_ID = os.environ.get("SHEET_ID", "")
 SHEET_TAB = os.environ.get("SHEET_TAB", "Open Questions")
