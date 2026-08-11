@@ -148,6 +148,39 @@ class TestEscalationNoteBlocks:
         text = " ".join(str(b) for b in blocks).lower()
         assert "possible duplicate of" in text and "#7" in text
 
+    def _set_source_select(self, blocks):
+        for b in blocks:
+            if b.get("type") != "actions":
+                continue
+            for el in b.get("elements", []):
+                if el.get("action_id") == "row_set_source":
+                    return el
+        return None
+
+    def test_set_source_select_offers_the_agreed_venues(self):
+        from sui_ops_bot import config
+        blocks = reports.escalation_note_blocks("7", "Seal", "Question", "https://x", "123.456")
+        sel = self._set_source_select(blocks)
+        assert sel is not None and sel["type"] == "static_select"
+        labels = [o["text"]["text"] for o in sel["options"]]
+        assert labels == config.SOURCE_VENUES
+
+    def test_set_source_option_values_embed_the_row_ts(self):
+        blocks = reports.escalation_note_blocks("7", "Seal", "Question", "https://x", "123.456")
+        sel = self._set_source_select(blocks)
+        # Each option carries the row ts so the action handler can find the row.
+        for o in sel["options"]:
+            ts, sep, venue = o["value"].partition("::")
+            assert ts == "123.456" and sep == "::" and venue
+
+    def test_buttons_block_still_intact(self):
+        # The set-source control is a separate actions block; the button block is
+        # unchanged so the discard/solved flow is untouched.
+        blocks = reports.escalation_note_blocks("7", "Seal", "Question", "https://x", "123.456")
+        buttons = next(b for b in blocks if b["type"] == "actions")
+        ids = {e["action_id"] for e in buttons["elements"]}
+        assert ids == {"row_discard", "row_solved"}
+
 
 class TestFollowups:
     TODAY = date(2026, 8, 10)

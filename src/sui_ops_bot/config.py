@@ -88,6 +88,14 @@ TYPES = ["Question", "Open PR", "Bug", "Feature Request", "Communication"]
 
 PRIORITIES = ["High", "Medium", "Low"]
 
+# Common venues offered by the optional one-tap set-source menu on the log note.
+# Agreed with the team; selecting one writes it to the Channel column. Editing
+# this list changes the menu (a code change with a test, like the taxonomy).
+SOURCE_VENUES = [
+    "Telegram", "Discord", "Sui Developer Forum", "GitHub Issues",
+    "X / Twitter", "Email", "Other",
+]
+
 # Who an open item is waiting on. A light who-are-we-waiting-on tag, not team
 # routing: 'organizer' for program/logistics, 'internal team' for a technical
 # escalation, 'reporter' when we need more info back. Inferred at classification

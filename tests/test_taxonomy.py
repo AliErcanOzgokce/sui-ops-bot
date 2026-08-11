@@ -50,3 +50,12 @@ def test_waiting_on_is_a_managed_column_not_a_human_one():
     assert "Waiting On" not in config.HUMAN_COLUMNS
     # Legacy human/escalation columns stay untouched.
     assert "Escalated To" in config.HUMAN_COLUMNS
+
+
+def test_source_venues_are_the_agreed_list():
+    # Agreed with the team for the one-tap set-source menu (Office Hours excluded).
+    assert config.SOURCE_VENUES == [
+        "Telegram", "Discord", "Sui Developer Forum", "GitHub Issues",
+        "X / Twitter", "Email", "Other",
+    ]
+    assert len(config.SOURCE_VENUES) == len(set(config.SOURCE_VENUES))
