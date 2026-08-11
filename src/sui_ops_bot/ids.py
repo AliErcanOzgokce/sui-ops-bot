@@ -105,8 +105,14 @@ def effective_text(event: dict) -> str:
     return "\n".join(parts)
 
 
-def is_substantive(text: str, min_chars: int) -> bool:
-    """Cheap local pre-filter: keep only messages worth a Claude call."""
+def is_substantive(text: str, min_chars: int, has_image: bool = False) -> bool:
+    """Cheap local pre-filter: keep only messages worth a Claude call.
+
+    An image carries its own substance (a screenshot of an error or stack trace),
+    so a message with one is kept even when its text is short or empty. Without an
+    image, the text-length and trivial-ack checks apply as before."""
+    if has_image:
+        return True
     if not text:
         return False
     stripped = re.sub(r"<[^>]+>", "", text).strip()             # drop mentions/links markup

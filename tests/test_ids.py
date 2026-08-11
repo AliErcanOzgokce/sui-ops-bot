@@ -150,3 +150,16 @@ class TestIsSubstantive:
 
     def test_empty(self):
         assert not is_substantive("", 25)
+
+    def test_image_only_message_is_kept(self):
+        # An image with little or no text carries the substance itself.
+        assert is_substantive("", 25, has_image=True)
+        assert is_substantive("see screenshot", 25, has_image=True)
+
+    def test_image_only_dropped_when_no_image(self):
+        # Same little-text message with no image stays dropped.
+        assert not is_substantive("", 25, has_image=False)
+        assert not is_substantive("see screenshot", 25, has_image=False)
+
+    def test_has_image_defaults_false(self):
+        assert not is_substantive("too short", 25)
