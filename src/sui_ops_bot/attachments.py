@@ -12,8 +12,14 @@ Two halves, split so the tricky part stays pure and testable:
 """
 from __future__ import annotations
 
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+
+# The image formats a vision-capable Claude model accepts. An image in any other
+# format (svg, bmp, heic) cannot be classified, so it is ignored at parse time
+# rather than wasting a vision call that the API would reject.
+SUPPORTED_MIMES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
 
 # Mime inferred from a URL extension when Slack gives a bare image_url with no
 # explicit mimetype. Anything unrecognized falls back to PNG, the common case.
@@ -24,6 +30,27 @@ _EXT_MIME = {
     "gif": "image/gif",
     "webp": "image/webp",
 }
+
+# Cap a single download. Matches the Anthropic per-image limit, so a larger file
+# could not be classified anyway, and bounds memory on the live event handler.
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
+
+
+class _StripAuthOnCrossHostRedirect(urllib.request.HTTPRedirectHandler):
+    """Drop the Authorization header if a redirect points at a different host, so
+    the Slack bot token is never sent anywhere but the host we asked for."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        new = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new is not None:
+            old_host = urllib.parse.urlsplit(req.full_url).hostname
+            new_host = urllib.parse.urlsplit(newurl).hostname
+            if old_host != new_host:
+                new.remove_header("Authorization")
+        return new
+
+
+_opener = urllib.request.build_opener(_StripAuthOnCrossHostRedirect)
 
 
 @dataclass(frozen=True)
@@ -43,9 +70,9 @@ def _mime_from_url(url: str) -> str:
 def _refs_from_files(files) -> list[ImageRef]:
     out = []
     for f in files or []:
-        mime = (f.get("mimetype") or "").strip()
+        mime = (f.get("mimetype") or "").strip().lower()
         url = (f.get("url_private") or f.get("url_private_download") or "").strip()
-        if mime.startswith("image/") and url:
+        if mime in SUPPORTED_MIMES and url:
             out.append(ImageRef(url=url, mime=mime))
     return out
 
@@ -69,12 +96,17 @@ def image_refs(msg: dict) -> list[ImageRef]:
     return refs
 
 
-def download_image(ref: ImageRef, token: str, *, timeout: float = 15.0) -> bytes:
+def download_image(ref: ImageRef, token: str, *, timeout: float = 10.0) -> bytes:
     """Fetch the bytes behind a Slack ``url_private`` link with the bot token.
 
-    Thin on purpose: the caller decides how to handle failure. The returned bytes
-    are the raw image and must never be logged or written to the audit trail.
+    Thin on purpose: the caller decides how to handle failure. The read is capped
+    at :data:`MAX_IMAGE_BYTES` (a larger file could not be classified anyway) and
+    a cross-host redirect drops the token. The returned bytes are the raw image
+    and must never be logged or written to the audit trail.
     """
     req = urllib.request.Request(ref.url, headers={"Authorization": f"Bearer {token}"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return resp.read()
+    with _opener.open(req, timeout=timeout) as resp:
+        data = resp.read(MAX_IMAGE_BYTES + 1)
+    if len(data) > MAX_IMAGE_BYTES:
+        raise ValueError(f"image exceeds {MAX_IMAGE_BYTES} bytes")
+    return data

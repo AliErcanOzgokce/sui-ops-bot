@@ -151,7 +151,9 @@ def classify_message(text: str, images: list[dict] | None = None) -> dict:
         try:
             return _tool_call(CLASSIFY_TOOL, system, assemble_user_content(user_text, imgs))
         except Exception as exc:
-            log(f"WARN vision classify failed, retrying text-only: {exc}")
+            # Log the error type only, never the exception body: it could echo the
+            # request, which contains the base64 image.
+            log(f"WARN vision classify failed ({type(exc).__name__}), retrying text-only")
     return _tool_call(CLASSIFY_TOOL, system, assemble_user_content(user_text, None))
 
 
