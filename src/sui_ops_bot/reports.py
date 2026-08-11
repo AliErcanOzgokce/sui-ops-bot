@@ -187,6 +187,17 @@ def escalation_note_blocks(rid, product: str, qtype: str, row_link: str, value: 
              "text": {"type": "plain_text", "text": ":white_check_mark: Mark solved"},
              "value": value},
         ]})
+    # Optional one-tap set-source menu, in its own actions block so it never
+    # touches the discard/solved flow. Each option carries the row ts so the
+    # handler can find the row. Purely optional: picking nothing changes nothing.
+    blocks.append({"type": "actions", "block_id": f"src-{rid}", "elements": [
+        {"type": "static_select", "action_id": "row_set_source",
+         "placeholder": {"type": "plain_text", "text": "Set source…"},
+         "options": [
+             {"text": {"type": "plain_text", "text": v}, "value": f"{value}::{v}"}
+             for v in config.SOURCE_VENUES
+         ]},
+    ]})
     return blocks
 
 
