@@ -32,7 +32,7 @@ from . import config, reports
 from .attachments import download_image, image_refs
 from .classify import classify_message, judge_resolution
 from .dedup import dedup_key, find_duplicate
-from .ids import clean_channel, effective_text, is_substantive, match_enum, shared_attachment
+from .ids import effective_text, infer_channel, is_substantive, match_enum, shared_attachment
 from .logutil import audit, current_window, log, today_str
 from .sheet import Row, SheetStore
 from .slack_client import (
@@ -132,7 +132,7 @@ def classify_and_log(channel: str, ts: str, user: str, text: str,
         "Date Asked": today_str(),
         "Window": config.WINDOW_DEFAULT or current_window(),
         "Platform": data.get("platform", ""),
-        "Channel": clean_channel(data.get("source_channel", "")),
+        "Channel": infer_channel(data.get("source_channel", ""), forwarded),
         "Question Summary": summary,
         "Link": new_link,
         "Raised By": data.get("raised_by", "") or fwd_author or poster_name,
