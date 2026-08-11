@@ -264,9 +264,14 @@ def handle_text_command(channel: str, text: str, ts: str, thread_ts: str | None)
         post(channel=channel, thread_ts=reply_thread, text=reports.open_report(store, permalink))
     elif key in ("aging", "aged", "old"):
         post(channel=channel, thread_ts=reply_thread, text=reports.aging_report(store, permalink))
+    elif key in ("followups", "followup", "nudge", "nudges"):
+        blocks = reports.followups_blocks(store, linker=permalink)
+        kwargs = {"blocks": blocks} if blocks else {}
+        post(channel=channel, thread_ts=reply_thread,
+             text=reports.followups_report(store, linker=permalink), **kwargs)
     elif mentioned:
         post(channel=channel, thread_ts=reply_thread,
-             text="Commands: `!status` · `!open` · `!aging` (or `@me status`). "
+             text="Commands: `!status` · `!open` · `!aging` · `!followups` (or `@me status`). "
                   "Native `/status /open /aging` work after the app is reinstalled with the "
                   "`commands` scope.")
     else:
@@ -368,6 +373,35 @@ def _handle_row_action(body: dict, kind: str) -> None:
         log("ERROR in row action:\n" + traceback.format_exc())
 
 
+def nudge_row(row: Row) -> None:
+    """One-tap follow-up: ping the item's owner in its own thread, reusing the
+    owner-mention mechanism the resolution flow already uses."""
+    owner_tag = f"<@{row.owner_uid}>" if row.owner_uid else row.values.get("Owner", "there")
+    party = row.values.get("Waiting On", "") or "the team"
+    rid = row.values.get("ID", "?")
+    row_link = store.row_link(row.row_number)
+    try:
+        post(channel=row.slack_channel, thread_ts=row.original_ts,
+             text=(f":bell: {owner_tag} follow-up nudge on *#{rid}* (still waiting on "
+                   f"{party}). (<{row_link}|row>)"))
+    except Exception as exc:
+        log(f"WARN could not post nudge for row {row.row_number}: {exc}")
+        return
+    log(f"nudged owner on row {row.row_number} (waiting on {party})")
+
+
+@app.action("row_nudge")
+def act_nudge(ack, body):
+    ack()
+    try:
+        value = (body.get("actions") or [{}])[0].get("value", "")
+        row = store.find_by_ts(value)
+        if row and row.status in config.OPEN_STATUSES:
+            nudge_row(row)
+    except Exception:
+        log("ERROR in row nudge:\n" + traceback.format_exc())
+
+
 @app.action("row_discard")
 def act_discard(ack, body):
     ack()
@@ -405,6 +439,10 @@ def on_mention(event, say):
         say(reports.aging_report(store, permalink))
     elif "open" in text:
         say(reports.open_report(store, permalink))
+    elif "followup" in text or "nudge" in text:
+        blocks = reports.followups_blocks(store, linker=permalink)
+        kwargs = {"blocks": blocks} if blocks else {}
+        say(text=reports.followups_report(store, linker=permalink), **kwargs)
     else:
         say(reports.status_report(store))
 

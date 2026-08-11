@@ -8,7 +8,7 @@ class FakeRow:
 
     def __init__(self, rid, product="", type="", status="Escalated",
                  date_asked="2026-08-01", summary="", raised_by="",
-                 link="", ts="", channel="", row_number=1):
+                 link="", ts="", channel="", row_number=1, waiting_on=""):
         self.row_number = row_number
         self.status = status
         self.original_ts = ts
@@ -18,7 +18,7 @@ class FakeRow:
         self.values = {
             "ID": rid, "Product": product, "Type": type, "Status": status,
             "Date Asked": date_asked, "Question Summary": summary,
-            "Raised By": raised_by, "Link": link,
+            "Raised By": raised_by, "Link": link, "Waiting On": waiting_on,
         }
 
 
@@ -147,6 +147,49 @@ class TestEscalationNoteBlocks:
         blocks = reports.escalation_note_blocks("9", "SDK", "Bug", "https://x", "1", dup_of="7")
         text = " ".join(str(b) for b in blocks).lower()
         assert "possible duplicate of" in text and "#7" in text
+
+
+class TestFollowups:
+    TODAY = date(2026, 8, 10)
+
+    def _rows(self):
+        return [
+            FakeRow("1", waiting_on="internal team", date_asked="2026-08-01", summary="rpc down"),
+            FakeRow("2", waiting_on="organizer", date_asked="2026-08-09", summary="cert deadline"),
+            FakeRow("3", waiting_on="", date_asked="2026-08-01", summary="no party"),
+            FakeRow("4", waiting_on="reporter", date_asked="2026-08-02", summary="needs logs"),
+            FakeRow("5", waiting_on="internal team", date_asked="2026-08-03", summary="sdk build"),
+        ]
+
+    def test_group_followups_filters_and_orders(self):
+        grouped = reports.group_followups(self._rows(), days=3, today=self.TODAY)
+        # organizer item is only 1 day old -> excluded; blank party -> excluded.
+        assert list(grouped.keys()) == ["internal team", "reporter"]
+        # within a party, oldest first (id 1 is 9d, id 5 is 7d)
+        assert [r.values["ID"] for r in grouped["internal team"]] == ["1", "5"]
+        assert [r.values["ID"] for r in grouped["reporter"]] == ["4"]
+
+    def test_report_groups_by_party_and_links(self):
+        out = reports.followups_report(FakeStore(self._rows()), days=3,
+                                       linker=_link, today=self.TODAY)
+        assert "Waiting on internal team" in out
+        assert "Waiting on reporter" in out
+        assert "over 3 days" in out
+        assert "*#1*" in out and "*#5*" in out and "*#4*" in out
+        # excluded ones do not appear
+        assert "*#2*" not in out and "*#3*" not in out
+        # each item carries a link
+        assert out.count("https://") >= 3
+
+    def test_report_empty_when_nothing_stale(self):
+        fresh = [FakeRow("9", waiting_on="organizer", date_asked="2026-08-10")]
+        out = reports.followups_report(FakeStore(fresh), days=3, linker=_link, today=self.TODAY)
+        assert "No follow-ups" in out
+
+    def test_report_ignores_rows_without_a_party(self):
+        rows = [FakeRow("7", waiting_on="", date_asked="2026-07-01", summary="old but no party")]
+        out = reports.followups_report(FakeStore(rows), days=3, linker=_link, today=self.TODAY)
+        assert "No follow-ups" in out
 
 
 class TestStatusReport:
