@@ -402,6 +402,32 @@ def act_nudge(ack, body):
         log("ERROR in row nudge:\n" + traceback.format_exc())
 
 
+@app.action("row_set_source")
+def act_set_source(ack, body):
+    """One-tap set-source: write the picked venue to the row's Channel column and
+    confirm to the clicker only (ephemeral), so the flow is never blocked."""
+    ack()
+    try:
+        selected = ((body.get("actions") or [{}])[0].get("selected_option") or {}).get("value", "")
+        ts, _, venue = selected.partition("::")
+        row = store.find_by_ts(ts)
+        if not row or not venue:
+            return
+        store.set(row.row_number, {"Channel": venue})
+        log(f"set source for row {row.row_number} to {venue!r}")
+        channel = body.get("channel", {}).get("id", "")
+        uid = body.get("user", {}).get("id", "")
+        if channel and uid:
+            try:
+                app.client.chat_postEphemeral(
+                    channel=channel, user=uid,
+                    text=f":round_pushpin: Source set to *{venue}* for *#{row.values.get('ID','?')}*.")
+            except Exception as exc:
+                log(f"WARN could not confirm set-source: {exc}")
+    except Exception:
+        log("ERROR in set source:\n" + traceback.format_exc())
+
+
 @app.action("row_discard")
 def act_discard(ack, body):
     ack()
