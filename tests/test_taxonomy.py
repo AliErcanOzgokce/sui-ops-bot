@@ -32,3 +32,21 @@ def test_managed_columns_include_product_and_type():
 def test_team_taxonomy_is_gone():
     # The old escalation-target concept must not linger as a public constant.
     assert not hasattr(config, "ESCALATION_TARGETS")
+
+
+def test_waiting_on_enum_is_the_three_parties():
+    assert config.WAITING_ON == ["internal team", "organizer", "reporter"]
+    assert len(config.WAITING_ON) == len(set(config.WAITING_ON))
+
+
+def test_waiting_on_default_is_blank():
+    # The field is optional: unknown lands as an empty cell, not a guessed party.
+    assert config.WAITING_ON_DEFAULT == ""
+    assert config.WAITING_ON_DEFAULT not in config.WAITING_ON
+
+
+def test_waiting_on_is_a_managed_column_not_a_human_one():
+    assert "Waiting On" in config.MANAGED_COLUMNS
+    assert "Waiting On" not in config.HUMAN_COLUMNS
+    # Legacy human/escalation columns stay untouched.
+    assert "Escalated To" in config.HUMAN_COLUMNS

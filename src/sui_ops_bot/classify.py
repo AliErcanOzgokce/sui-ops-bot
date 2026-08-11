@@ -58,6 +58,11 @@ CLASSIFY_TOOL = {
                 "enum": config.TYPES,
                 "description": "The kind of ask: Question (technical/how-to), Open PR (a pull request needs review), Bug (bug/incident/outage/funds-stuck), Feature Request (enhancement ask), Communication (feedback, docs feedback, positioning).",
             },
+            "waiting_on": {
+                "type": "string",
+                "enum": config.WAITING_ON,
+                "description": "Optional. Who this item is waiting on: 'organizer' for a program/logistics question, 'internal team' for a technical escalation that our team must resolve, 'reporter' when we need more information back from the person who raised it. Omit if unclear.",
+            },
         },
         "required": ["is_escalation", "question_summary", "platform", "source_channel",
                      "link", "raised_by", "priority", "product", "type"],
@@ -161,6 +166,11 @@ def classify_system() -> str:
         "- TEE or confidential compute -> Nautilus\n"
         "Use 'Program' for non-product program/logistics questions, and 'Other' only when no "
         "specific product fits.\n"
+        "\n"
+        "WAITING ON (who we are waiting on, optional): 'organizer' for a program or logistics "
+        "question that a program organizer answers; 'internal team' for a technical escalation "
+        "our own team must resolve; 'reporter' when we need more information back from the "
+        "person who raised it. Omit it if unclear.\n"
         "\n"
         "EXAMPLES:\n"
         "- \"Please upload your weekly reports to the drive before Friday.\" -> is_escalation "
