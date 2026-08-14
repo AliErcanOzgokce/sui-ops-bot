@@ -129,11 +129,20 @@ CLASSIFICATION_COLUMNS = ["Product", "Type", "Waiting On"]
 INFRA_COLUMNS = ["Slack Channel", "Slack TS", "Bot Refs"]
 MANAGED_COLUMNS = CLASSIFICATION_COLUMNS + INFRA_COLUMNS
 
-# Status vocabulary (matches the sheet's Dashboard "Active" formula).
-OPEN_STATUSES = {"Open", "In Progress", "Escalated"}
+# Status lifecycle (the sheet's Dashboard "Active" formula must count the open
+# ones below). The forwarding workflow moves a question through these states,
+# mostly driven by admin emoji reactions. A new question starts as "Sent".
+STATUSES = ["Sent", "Acknowledged", "Forwarded", "In Progress", "Solved", "Answered", "Closed"]
+STATUS_SENT = "Sent"
+STATUS_IN_PROGRESS = "In Progress"
+STATUS_CLOSED = "Closed"
+# Open = still needs attention, so it shows in reports and the sheet Active count.
+# Solved / Answered / Closed are resolved. The legacy "Open" / "Escalated" values
+# on historical rows are kept open so those rows keep showing after the switch.
+OPEN_STATUSES = {"Sent", "Acknowledged", "Forwarded", "In Progress", "Open", "Escalated"}
+# Legacy constants kept so older references and historical rows still resolve.
 STATUS_OPEN = "Open"
 STATUS_ESCALATED = "Escalated"
-STATUS_CLOSED = "Closed"
 
 CHECK_REACTIONS = {"white_check_mark", "heavy_check_mark", "ballot_box_with_check"}
 DISCARD_REACTIONS = {"x", "negative_squared_cross_mark", "heavy_multiplication_x", "no_entry"}

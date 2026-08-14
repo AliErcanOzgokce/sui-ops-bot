@@ -149,7 +149,7 @@ def classify_and_log(channel: str, ts: str, user: str, text: str,
         # their uid is kept in Bot Refs for @-mentions.
         "Owner": poster_name or config.OWNER_DEFAULT,
         "Priority": data.get("priority", ""),
-        "Status": config.STATUS_ESCALATED,
+        "Status": config.STATUS_SENT,
         "Product": product,
         "Type": qtype,
         "Waiting On": waiting_on,

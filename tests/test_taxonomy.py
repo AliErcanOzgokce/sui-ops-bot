@@ -34,6 +34,28 @@ def test_team_taxonomy_is_gone():
     assert not hasattr(config, "ESCALATION_TARGETS")
 
 
+def test_status_lifecycle_is_the_seven_states():
+    assert config.STATUSES == [
+        "Sent", "Acknowledged", "Forwarded", "In Progress",
+        "Solved", "Answered", "Closed",
+    ]
+    assert config.STATUS_SENT == "Sent"
+    assert config.STATUS_CLOSED == "Closed"
+    assert config.STATUS_SENT in config.STATUSES
+
+
+def test_open_statuses_cover_active_states_and_legacy():
+    # Active states a lead still acts on are "open".
+    for s in ("Sent", "Acknowledged", "Forwarded", "In Progress"):
+        assert s in config.OPEN_STATUSES
+    # Resolved states are not open.
+    for s in ("Solved", "Answered", "Closed"):
+        assert s not in config.OPEN_STATUSES
+    # Legacy statuses on historical rows still count as open so they keep showing.
+    for s in ("Open", "Escalated"):
+        assert s in config.OPEN_STATUSES
+
+
 def test_waiting_on_enum_is_the_three_parties():
     assert config.WAITING_ON == ["internal team", "organizer", "reporter"]
     assert len(config.WAITING_ON) == len(set(config.WAITING_ON))
