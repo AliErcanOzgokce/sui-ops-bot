@@ -170,10 +170,11 @@ def classify_and_log(channel: str, ts: str, user: str, text: str,
         dup_note = f" Possible duplicate of #{dup_of}." if dup_of else ""
         posted = post(
             channel=channel, thread_ts=ts,
-            text=(f":pushpin: Logged as #{rid} ({product} · {qtype}).{dup_note} "
-                  f"Discard or mark solved below."),
+            text=(f":inbox_tray: New question forwarded from devleads: #{rid} "
+                  f"({product} · {qtype}).{dup_note}"),
             blocks=reports.escalation_note_blocks(rid, product, qtype, row_link,
-                                                  value=ts, dup_of=dup_of),
+                                                  value=ts, dup_of=dup_of,
+                                                  summary=summary, links=new_link),
         )
         store.set_refs(row.row_number, anchor_ts=posted["ts"])
     except Exception as exc:

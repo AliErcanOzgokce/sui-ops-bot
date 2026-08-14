@@ -159,21 +159,30 @@ def _link(store, row, linker=None) -> str:
 # Formatters
 # ---------------------------------------------------------------------------
 def escalation_note_blocks(rid, product: str, qtype: str, row_link: str, value: str,
-                           dup_of=None) -> list:
-    """Block Kit for the bot's in-thread log note: the summary line plus one-tap
-    Discard and Mark-solved buttons, so a lead never has to hunt for a reaction.
-    `value` is the escalation message ts, used by the action handler to find the row.
-    When `dup_of` is set, a context line flags this as a possible duplicate of that
-    row so a lead can merge it by hand."""
-    badge = " · ".join(p for p in (product, qtype) if p) or "Unclassified"
-    blocks = [
-        {"type": "section", "text": {"type": "mrkdwn",
-            "text": f":pushpin: Logged as *#{rid}*  ·  {badge}  (<{row_link}|open row>)"}},
-    ]
+                           dup_of=None, summary: str = "", links: str = "") -> list:
+    """Block Kit for the bot's in-thread forwarding note, in the structured format
+    the dev-leads use to hand a question to an internal team: a banner, then
+    Question / Department (the product) / Support Type (the type) / Links, a
+    forward prompt, and the one-tap Discard and Mark-solved buttons. `value` is the
+    escalation message ts, used by the action handler to find the row. When
+    `dup_of` is set, a context line flags a possible duplicate."""
+    links_line = links or f"<{row_link}|open row>"
+    body = (
+        f":inbox_tray: *A new question raised from devleads has just been forwarded!*  (*#{rid}*)\n"
+        f"*Question:* {summary or '(see thread)'}\n"
+        f"*Department:* {product or 'Unclassified'}\n"
+        f"*Support Type:* {qtype or '-'}\n"
+        f"*Links:* {links_line}"
+    )
+    blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": body}}]
     if dup_of:
         blocks.append({"type": "context", "elements": [{"type": "mrkdwn",
             "text": f":twisted_rightwards_arrows: Possible duplicate of *#{dup_of}* "
                     f"(merge by hand if so)."}]})
+    blocks.append({"type": "context", "elements": [{"type": "mrkdwn",
+        "text": ":arrow_right: *Did you forward this?* React :arrow_right: once you have "
+                "forwarded it to the team. Only admins drive the status (Domenico or the "
+                "escalator)."}]})
     blocks.append(
         {"type": "actions", "block_id": f"esc-{rid}", "elements": [
             {"type": "button", "action_id": "row_discard", "style": "danger",
