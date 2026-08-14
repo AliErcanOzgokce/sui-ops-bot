@@ -1,6 +1,6 @@
 from datetime import date
 
-from sui_ops_bot import reports
+from sui_ops_bot import config, reports
 
 
 class FakeRow:
@@ -30,7 +30,8 @@ class FakeStore:
         pass
 
     def open_rows(self):
-        return list(self._rows)
+        # Mirror SheetStore.open_rows: only rows in an open status.
+        return [r for r in self._rows if r.values.get("Status", "") in config.OPEN_STATUSES]
 
     def row_link(self, n):
         return f"https://sheet/row/{n}"
@@ -180,6 +181,28 @@ class TestEscalationNoteBlocks:
         buttons = next(b for b in blocks if b["type"] == "actions")
         ids = {e["action_id"] for e in buttons["elements"]}
         assert ids == {"row_discard", "row_solved"}
+
+
+class TestNewStatusLifecycleInReports:
+    def test_sent_and_active_states_show_as_open(self):
+        rows = [
+            FakeRow("1", status="Sent"),
+            FakeRow("2", status="Acknowledged"),
+            FakeRow("3", status="Forwarded"),
+            FakeRow("4", status="In Progress"),
+            FakeRow("5", status="Escalated"),  # legacy, still open
+        ]
+        out = reports.status_report(FakeStore(rows))
+        assert "*Open items:* 5" in out
+
+    def test_resolved_states_are_not_open(self):
+        rows = [
+            FakeRow("6", status="Solved"),
+            FakeRow("7", status="Answered"),
+            FakeRow("8", status="Closed"),
+        ]
+        out = reports.status_report(FakeStore(rows))
+        assert "No open items" in out
 
 
 class TestReportArrowTargetsSheetRow:
