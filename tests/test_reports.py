@@ -134,11 +134,29 @@ class TestEscalationNoteBlocks:
         discard = next(e for e in actions["elements"] if e["action_id"] == "row_discard")
         assert "confirm" in discard
 
-    def test_summary_line_shows_id_and_badge(self):
+    def test_structured_note_shows_dom_fields(self):
+        blocks = reports.escalation_note_blocks(
+            "7", "Walrus", "Bug", "https://sheet/row/9", "1",
+            summary="blob upload returns 500 on testnet",
+            links="https://github.com/MystenLabs/walrus/issues/7")
+        text = " ".join(str(b) for b in blocks)
+        assert "just been forwarded" in text
+        assert "*#7*" in text
+        assert "*Question:*" in text and "blob upload returns 500 on testnet" in text
+        assert "*Department:*" in text and "Walrus" in text
+        assert "*Support Type:*" in text and "Bug" in text
+        assert "*Links:*" in text and "github.com/MystenLabs/walrus/issues/7" in text
+
+    def test_forward_prompt_footer_present(self):
         blocks = reports.escalation_note_blocks("7", "Seal", "Question", "https://x", "1")
-        section = next(b for b in blocks if b["type"] == "section")
-        assert "*#7*" in section["text"]["text"]
-        assert "Seal · Question" in section["text"]["text"]
+        text = " ".join(str(b) for b in blocks).lower()
+        assert "did you forward this" in text
+        assert "admin" in text  # notes that only admins drive the status
+
+    def test_links_falls_back_when_none(self):
+        blocks = reports.escalation_note_blocks("7", "Seal", "Question", "https://x", "1")
+        text = " ".join(str(b) for b in blocks)
+        assert "*Links:*" in text
 
     def test_no_dup_callout_by_default(self):
         blocks = reports.escalation_note_blocks("7", "Seal", "Question", "https://x", "1")
