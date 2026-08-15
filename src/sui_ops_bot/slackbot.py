@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+import threading
 import time
 import traceback
 from datetime import UTC, datetime, timedelta
@@ -218,7 +219,8 @@ def _sweep_pending() -> None:
         return
     cutoff = datetime.now(UTC) - timedelta(hours=config.PENDING_TIMEOUT_HOURS)
     stale = []
-    for t, p in _pending.items():
+    # Snapshot: another Bolt thread may finalize (pop) a held item concurrently.
+    for t, p in list(_pending.items()):
         try:
             if datetime.fromisoformat(p["created_at"]) < cutoff:
                 stale.append(t)
@@ -226,6 +228,18 @@ def _sweep_pending() -> None:
             stale.append(t)
     for t in stale:
         finalize_pending(t, reason="timeout")
+
+
+def _run_pending_sweeper() -> None:
+    """Background heartbeat so a held question is logged once its wait is up even
+    if the channel stays silent (the lazy sweep only fires on inbound messages)."""
+    interval = max(300, config.PENDING_TIMEOUT_HOURS * 3600 // 12)
+    while True:
+        time.sleep(interval)
+        try:
+            _sweep_pending()
+        except Exception:
+            log("ERROR in pending sweeper:\n" + traceback.format_exc())
 
 
 def classify_and_log(channel: str, ts: str, user: str, text: str,
@@ -715,6 +729,7 @@ def main() -> None:
     except Exception as exc:
         log(f"WARN could not resolve bot user id: {exc}")
     backfill()
+    threading.Thread(target=_run_pending_sweeper, daemon=True).start()
     log("starting Socket Mode…")
     SocketModeHandler(app, config.SLACK_APP_TOKEN).start()
 
