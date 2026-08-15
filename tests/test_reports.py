@@ -284,6 +284,17 @@ class TestFollowups:
         assert "No follow-ups" in out
 
 
+class TestSetSourcePromptBlocks:
+    def test_menu_carries_ts_and_venues(self):
+        blocks = reports.set_source_prompt_blocks("1786.42")
+        sel = blocks[0]["elements"][0]
+        assert sel["action_id"] == "row_set_source"
+        labels = [o["text"]["text"] for o in sel["options"]]
+        assert labels == config.SOURCE_VENUES
+        for o in sel["options"]:
+            assert o["value"].startswith("1786.42::")
+
+
 class TestStatusReport:
     def test_by_product_breakdown(self):
         rows = [

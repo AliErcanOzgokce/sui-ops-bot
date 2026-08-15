@@ -25,6 +25,7 @@ import re
 import sys
 import time
 import traceback
+from datetime import UTC, datetime, timedelta
 
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 
@@ -38,6 +39,8 @@ from .ids import (
     infer_channel,
     is_substantive,
     match_enum,
+    needs_more_info,
+    platform_from_source,
     resolve_platform,
     shared_attachment,
 )
@@ -96,8 +99,138 @@ def annotate_duplicate(row: Row, new_ts: str, channel: str, summary: str = "") -
     log(f"exact duplicate of #{rid}: annotated row {row.row_number}, not appended")
 
 
+# Questions held pending a source/answer before they are logged. In-memory: the
+# live path asks and holds; the backfill path logs directly (which doubles as the
+# fallback after a restart). Keyed by the escalation message ts.
+_pending: dict[str, dict] = {}
+
+
+def _resolve_fields(channel: str, ts: str, user: str, text: str,
+                    data: dict, forwarded: dict) -> dict:
+    """Turn a raw classification into the resolved row fields (product, type,
+    waiting-on, a tidy summary, the true platform, the inferred venue, etc.)."""
+    poster_name = user_display_name(user)
+    link = ""
+    try:
+        link = app.client.chat_getPermalink(channel=channel, message_ts=ts)["permalink"]
+    except Exception:
+        pass
+    # For a forwarded message, prefer the original author and a link to the source
+    # message over the person who forwarded it and the in-channel permalink.
+    fwd_author = (forwarded.get("author_name") or "").strip()
+    fwd_url = (forwarded.get("from_url") or "").strip()
+    new_link = data.get("link", "") or fwd_url or link
+    return {
+        "product": data.get("product", config.PRODUCT_DEFAULT) or config.PRODUCT_DEFAULT,
+        "qtype": data.get("type", config.TYPE_DEFAULT) or config.TYPE_DEFAULT,
+        "waiting_on": match_enum(data.get("waiting_on", ""), config.WAITING_ON,
+                                 config.WAITING_ON_DEFAULT),
+        "summary": clip_summary(data.get("question_summary", ""), config.SUMMARY_MAX_CHARS),
+        "link": new_link,
+        "channel_venue": infer_channel(data.get("source_channel", ""), forwarded),
+        "platform": resolve_platform(data.get("platform", ""), new_link,
+                                     data.get("source_channel", "")),
+        "raised_by": data.get("raised_by", "") or fwd_author or poster_name,
+        "owner": poster_name or config.OWNER_DEFAULT,
+        "owner_uid": user,
+        "priority": data.get("priority", ""),
+        "text": text,
+    }
+
+
+def _log_resolved(channel: str, ts: str, user: str, r: dict, dup_of=None) -> None:
+    """Append the row for a resolved question and post the forwarding note."""
+    fields = {
+        # ID is left to the sheet's own formula (set inside store.append).
+        "Date Asked": today_str(),
+        "Window": config.WINDOW_DEFAULT or current_window(),
+        "Platform": r["platform"],
+        "Channel": r["channel_venue"],
+        "Question Summary": r["summary"],
+        "Link": r["link"],
+        "Raised By": r["raised_by"],
+        "Owner": r["owner"],
+        "Priority": r["priority"],
+        "Status": config.STATUS_SENT,
+        "Product": r["product"],
+        "Type": r["qtype"],
+        "Waiting On": r["waiting_on"],
+        "Date Resolved": "",
+        store.notes_col: "",
+        "Slack Channel": channel,
+        "Slack TS": ts,
+        "Bot Refs": json.dumps({"owner_uid": r["owner_uid"]}),
+    }
+    row = store.append(fields)
+    if not row:
+        log("ERROR appended row not found after reload")
+        return
+    rid = row.values.get("ID", "?")
+    row_link = store.row_link(row.row_number)
+    try:
+        dup_note = f" Possible duplicate of #{dup_of}." if dup_of else ""
+        posted = post(
+            channel=channel, thread_ts=ts,
+            text=(f":inbox_tray: New question forwarded from devleads: #{rid} "
+                  f"({r['product']} · {r['qtype']}).{dup_note}"),
+            blocks=reports.escalation_note_blocks(rid, r["product"], r["qtype"], row_link,
+                                                  value=ts, dup_of=dup_of,
+                                                  summary=r["summary"], links=r["link"]),
+        )
+        store.set_refs(row.row_number, anchor_ts=posted["ts"])
+    except Exception as exc:
+        log(f"WARN could not post log note: {exc}")
+    log(f"logged escalation #{rid} row {row.row_number} product={r['product']} type={r['qtype']}")
+
+
+def _hold_for_info(channel: str, ts: str, user: str, r: dict, dup_of=None) -> None:
+    """Do not open the row yet: ask in-thread for the missing source and hold the
+    resolved fields until a source or reply arrives (or the timeout logs it)."""
+    _pending[ts] = {"channel": channel, "user": user, "resolved": r, "dup_of": dup_of,
+                    "created_at": datetime.now(UTC).isoformat()}
+    try:
+        post(channel=channel, thread_ts=ts,
+             text=(":grey_question: Before I track this I need its source. Where did it come "
+                   "from? Pick a venue below, or just reply here. (I will log it anyway if "
+                   "nobody answers.)"),
+             blocks=reports.set_source_prompt_blocks(ts))
+    except Exception as exc:
+        log(f"WARN could not post info request: {exc}")
+    log(f"held question pending source/info for ts {ts}")
+
+
+def finalize_pending(ts: str, source: str | None = None, reason: str = "answered") -> None:
+    """Log a previously held question, optionally with a source the human supplied."""
+    p = _pending.pop(ts, None)
+    if not p:
+        return
+    r = dict(p["resolved"])
+    if source:
+        r["channel_venue"] = source
+        r["platform"] = platform_from_source(source) or r["platform"]
+    _log_resolved(p["channel"], ts, p["user"], r, dup_of=p.get("dup_of"))
+    log(f"finalized pending ts {ts} ({reason})")
+
+
+def _sweep_pending() -> None:
+    """Log any held question older than the timeout, so none is lost to silence."""
+    if not _pending:
+        return
+    cutoff = datetime.now(UTC) - timedelta(hours=config.PENDING_TIMEOUT_HOURS)
+    stale = []
+    for t, p in _pending.items():
+        try:
+            if datetime.fromisoformat(p["created_at"]) < cutoff:
+                stale.append(t)
+        except Exception:
+            stale.append(t)
+    for t in stale:
+        finalize_pending(t, reason="timeout")
+
+
 def classify_and_log(channel: str, ts: str, user: str, text: str,
-                     forwarded: dict | None = None, images: list[dict] | None = None) -> None:
+                     forwarded: dict | None = None, images: list[dict] | None = None,
+                     allow_ask: bool = True) -> None:
     try:
         result = classify_message(text, images=images)
     except Exception as exc:
@@ -108,78 +241,24 @@ def classify_and_log(channel: str, ts: str, user: str, text: str,
           verdict=data, tokens_in=result["tokens_in"], tokens_out=result["tokens_out"])
     if not data.get("is_escalation"):
         return
-
-    poster_name = user_display_name(user)
-    forwarded = forwarded or {}
-    link = ""
-    try:
-        link = app.client.chat_getPermalink(channel=channel, message_ts=ts)["permalink"]
-    except Exception:
-        pass
-    # For a forwarded message, prefer the original author and a link to the source
-    # message over the person who forwarded it and the in-channel permalink.
-    fwd_author = (forwarded.get("author_name") or "").strip()
-    fwd_url = (forwarded.get("from_url") or "").strip()
-    product = data.get("product", config.PRODUCT_DEFAULT) or config.PRODUCT_DEFAULT
-    qtype = data.get("type", config.TYPE_DEFAULT) or config.TYPE_DEFAULT
-    waiting_on = match_enum(data.get("waiting_on", ""), config.WAITING_ON, config.WAITING_ON_DEFAULT)
+    r = _resolve_fields(channel, ts, user, text, data, forwarded or {})
 
     # Duplicate / re-forward check against the open board. An exact key match (a
     # shared GitHub issue URL) annotates the existing row instead of opening a
     # second one; a similarity-only match still logs but flags the possible dup.
-    summary = clip_summary(data.get("question_summary", ""), config.SUMMARY_MAX_CHARS)
-    new_link = data.get("link", "") or fwd_url or link
-    match = find_duplicate(dedup_key(text, new_link), product, summary, store.open_rows())
+    match = find_duplicate(dedup_key(text, r["link"]), r["product"], r["summary"],
+                           store.open_rows())
     if match and match.kind == "exact":
-        annotate_duplicate(match.row, ts, channel, summary=summary)
+        annotate_duplicate(match.row, ts, channel, summary=r["summary"])
         return
     dup_of = match.row.values.get("ID") if match else None
 
-    fields = {
-        # ID is left to the sheet's own formula (set inside store.append).
-        "Date Asked": today_str(),
-        "Window": config.WINDOW_DEFAULT or current_window(),
-        "Platform": resolve_platform(data.get("platform", ""), new_link,
-                                     data.get("source_channel", "")),
-        "Channel": infer_channel(data.get("source_channel", ""), forwarded),
-        "Question Summary": summary,
-        "Link": new_link,
-        "Raised By": data.get("raised_by", "") or fwd_author or poster_name,
-        # The lead who logged it owns it (matches the sheet's old convention), and
-        # their uid is kept in Bot Refs for @-mentions.
-        "Owner": poster_name or config.OWNER_DEFAULT,
-        "Priority": data.get("priority", ""),
-        "Status": config.STATUS_SENT,
-        "Product": product,
-        "Type": qtype,
-        "Waiting On": waiting_on,
-        "Date Resolved": "",
-        store.notes_col: "",
-        "Slack Channel": channel,
-        "Slack TS": ts,
-        "Bot Refs": json.dumps({"owner_uid": user}),
-    }
-    row = store.append(fields)
-    if not row:
-        log("ERROR appended row not found after reload")
+    # If the source is unknown or the question is too thin, ask before logging
+    # (live path only). Backfill logs directly, which is also the restart fallback.
+    if allow_ask and config.ASK_WHEN_UNSOURCED and needs_more_info(r["waiting_on"], r["channel_venue"]):
+        _hold_for_info(channel, ts, user, r, dup_of=dup_of)
         return
-
-    rid = row.values.get("ID", "?")
-    row_link = store.row_link(row.row_number)
-    try:
-        dup_note = f" Possible duplicate of #{dup_of}." if dup_of else ""
-        posted = post(
-            channel=channel, thread_ts=ts,
-            text=(f":inbox_tray: New question forwarded from devleads: #{rid} "
-                  f"({product} · {qtype}).{dup_note}"),
-            blocks=reports.escalation_note_blocks(rid, product, qtype, row_link,
-                                                  value=ts, dup_of=dup_of,
-                                                  summary=summary, links=new_link),
-        )
-        store.set_refs(row.row_number, anchor_ts=posted["ts"])
-    except Exception as exc:
-        log(f"WARN could not post log note: {exc}")
-    log(f"logged escalation #{rid} row {row.row_number} product={product} type={qtype}")
+    _log_resolved(channel, ts, user, r, dup_of=dup_of)
 
 
 # -- Feature 2: resolution (human-in-the-loop) ------------------------------
@@ -306,7 +385,14 @@ def on_message(event, logger):
         if handle_text_command(channel, text, ts, thread_ts):
             return
 
+        # Log any held question whose wait has timed out (cheap, lazy sweep).
+        _sweep_pending()
+
         if thread_ts and thread_ts != ts:
+            # A reply on a held question counts as the answer: log it now.
+            if thread_ts in _pending:
+                finalize_pending(thread_ts, reason="reply")
+                return
             row = store.find_by_ts(thread_ts)
             if row:
                 run_resolution_check(row, channel, thread_ts)
@@ -320,7 +406,7 @@ def on_message(event, logger):
         refs = image_refs(event)
         if not is_substantive(eff, config.MIN_MESSAGE_CHARS, has_image=bool(refs)):
             return
-        if store.ts_tracked(ts):
+        if store.ts_tracked(ts) or ts in _pending:
             return
         classify_and_log(channel, ts, user, eff, forwarded=shared_attachment(event),
                          images=download_images(refs))
@@ -420,8 +506,24 @@ def act_set_source(ack, body):
     try:
         selected = ((body.get("actions") or [{}])[0].get("selected_option") or {}).get("value", "")
         ts, _, venue = selected.partition("::")
+        if not venue:
+            return
+        # A held (not-yet-logged) question: the picked venue is the source we were
+        # waiting for, so log it now instead of updating a row that does not exist.
+        if ts in _pending:
+            finalize_pending(ts, source=venue, reason="source set")
+            channel = body.get("channel", {}).get("id", "")
+            uid = body.get("user", {}).get("id", "")
+            if channel and uid:
+                try:
+                    app.client.chat_postEphemeral(
+                        channel=channel, user=uid,
+                        text=f":round_pushpin: Thanks, logged with source *{venue}*.")
+                except Exception as exc:
+                    log(f"WARN could not confirm set-source: {exc}")
+            return
         row = store.find_by_ts(ts)
-        if not row or not venue:
+        if not row:
             return
         store.set(row.row_number, {"Channel": venue})
         log(f"set source for row {row.row_number} to {venue!r}")
@@ -501,16 +603,19 @@ def backfill() -> None:
                     if m.get("subtype") or m.get("bot_id"):
                         continue
                     ts = m.get("ts", "")
-                    if store.ts_tracked(ts):
+                    if store.ts_tracked(ts) or ts in _pending:
                         continue
                     eff = effective_text(m)
                     refs = image_refs(m)
                     if not is_substantive(eff, config.MIN_MESSAGE_CHARS, has_image=bool(refs)):
                         continue
                     scanned += 1
+                    # Backfill logs directly (allow_ask=False): historical messages
+                    # are logged rather than interrogated, which is also the fallback
+                    # for questions held before a restart.
                     classify_and_log(channel, ts, m.get("user", ""), eff,
                                      forwarded=shared_attachment(m),
-                                     images=download_images(refs))
+                                     images=download_images(refs), allow_ask=False)
                 cursor = resp.get("response_metadata", {}).get("next_cursor")
                 if not cursor:
                     break

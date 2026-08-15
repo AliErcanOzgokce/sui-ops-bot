@@ -6,6 +6,7 @@ from sui_ops_bot.ids import (
     infer_channel,
     is_substantive,
     match_enum,
+    needs_more_info,
     norm_id,
     parse_ids,
     platform_from_source,
@@ -85,6 +86,19 @@ class TestResolvePlatform:
 
     def test_all_empty_is_blank(self):
         assert resolve_platform("", "", "") == ""
+
+
+class TestNeedsMoreInfo:
+    def test_unknown_source_needs_info(self):
+        assert needs_more_info("internal team", "") is True
+        assert needs_more_info("", "   ") is True
+
+    def test_reporter_waiting_needs_info(self):
+        assert needs_more_info("reporter", "#tg-overflow") is True
+
+    def test_sourced_and_not_reporter_is_fine(self):
+        assert needs_more_info("internal team", "#tg-overflow") is False
+        assert needs_more_info("organizer", "GitHub Issues") is False
 
 
 class TestClipSummary:

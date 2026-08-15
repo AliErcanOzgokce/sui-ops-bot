@@ -210,6 +210,19 @@ def escalation_note_blocks(rid, product: str, qtype: str, row_link: str, value: 
     return blocks
 
 
+def set_source_prompt_blocks(value: str) -> list:
+    """A bare set-source menu for the ask-before-logging prompt: one static select
+    whose option values carry the message ts, so the handler can finalize the held
+    question with the picked venue."""
+    return [{"type": "actions", "block_id": f"srcask-{value}", "elements": [
+        {"type": "static_select", "action_id": "row_set_source",
+         "placeholder": {"type": "plain_text", "text": "Set source…"},
+         "options": [
+             {"text": {"type": "plain_text", "text": v}, "value": f"{value}::{v}"}
+             for v in config.SOURCE_VENUES
+         ]}]}]
+
+
 def status_report(store) -> str:
     store.reload()
     rows = store.open_rows()

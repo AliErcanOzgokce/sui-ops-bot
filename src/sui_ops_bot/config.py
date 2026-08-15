@@ -51,6 +51,13 @@ MIN_MESSAGE_CHARS = int(os.environ.get("MIN_MESSAGE_CHARS", "25"))
 # Hard cap on the Question Summary the bot writes, so the sheet stays a scannable
 # one-liner even if the model rambles. The prompt asks for shorter; this is the net.
 SUMMARY_MAX_CHARS = int(os.environ.get("SUMMARY_MAX_CHARS", "110"))
+# When a new question has no clear source (or the classifier says the reporter
+# still owes info), ask in-thread before opening the row instead of logging a thin
+# one. Set ASK_WHEN_UNSOURCED=0 to go back to always logging silently.
+ASK_WHEN_UNSOURCED = os.environ.get("ASK_WHEN_UNSOURCED", "1").strip().lower() not in ("0", "false", "no", "")
+# How long a held (unanswered) question waits before it is logged anyway, so a
+# question is never lost just because nobody replied with the source.
+PENDING_TIMEOUT_HOURS = int(os.environ.get("PENDING_TIMEOUT_HOURS", "24"))
 
 # Optional identity override for the bot's own messages (needs the
 # chat:write.customize scope). Useful when a renamed app still shows a stale name.
