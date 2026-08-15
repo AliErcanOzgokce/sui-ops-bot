@@ -444,7 +444,10 @@ def on_reaction(event, logger):
         reaction = event.get("reaction", "")
         reactor = event.get("user", "")
         row = store.find_by_ts(ts)
-        if not row or row.status not in config.OPEN_STATUSES:
+        # Act on anything not already Closed, so an admin can correct a mis-clicked
+        # Solved / Answered back to an earlier state (those are not "open" for
+        # reports but must stay reactable).
+        if not row or row.status == config.STATUS_CLOSED:
             return
         if reaction in config.DISCARD_REACTIONS:
             discard_row(row, channel)
