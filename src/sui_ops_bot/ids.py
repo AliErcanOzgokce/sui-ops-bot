@@ -91,6 +91,14 @@ def platform_from_source(source: str) -> str:
     return ""
 
 
+def is_admin(user_id: str, owner_uid: str, admin_ids) -> bool:
+    """Who may drive a question's status with a reaction: a configured admin (e.g.
+    Domenico) or the person who escalated that question (its owner)."""
+    if not user_id:
+        return False
+    return user_id == owner_uid or user_id in (admin_ids or [])
+
+
 def needs_more_info(waiting_on: str, channel: str) -> bool:
     """True when a new escalation is too thin to track cleanly: the source venue is
     unknown, or the classifier judged the reporter still owes more information. The
