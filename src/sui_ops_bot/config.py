@@ -141,8 +141,26 @@ MANAGED_COLUMNS = CLASSIFICATION_COLUMNS + INFRA_COLUMNS
 # mostly driven by admin emoji reactions. A new question starts as "Sent".
 STATUSES = ["Sent", "Acknowledged", "Forwarded", "In Progress", "Solved", "Answered", "Closed"]
 STATUS_SENT = "Sent"
+STATUS_ACKNOWLEDGED = "Acknowledged"
+STATUS_FORWARDED = "Forwarded"
 STATUS_IN_PROGRESS = "In Progress"
+STATUS_ANSWERED = "Answered"
 STATUS_CLOSED = "Closed"
+# Early states a reply should bump to In Progress (work is now happening).
+PRE_PROGRESS_STATUSES = {"Sent", "Acknowledged", "Forwarded"}
+
+# Slack member ids allowed to drive status with reactions (e.g. Domenico). The
+# person who escalated a question is always an admin for that question, so this
+# can stay empty until you have the ids. Comma-separated in the env.
+ADMIN_USER_IDS = [u.strip() for u in os.environ.get("ADMIN_USER_IDS", "").split(",") if u.strip()]
+# Admin emoji reaction -> the status it moves an open item to. This is the
+# forwarding workflow: an admin reacts as they act on the question.
+EMOJI_STATUS = {
+    "arrow_right": "Forwarded",
+    "white_check_mark": "Acknowledged",
+    "heart": "In Progress",
+    "tada": "Solved",
+}
 # Open = still needs attention, so it shows in reports and the sheet Active count.
 # Solved / Answered / Closed are resolved. The legacy "Open" / "Escalated" values
 # on historical rows are kept open so those rows keep showing after the switch.

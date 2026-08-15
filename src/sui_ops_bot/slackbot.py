@@ -38,6 +38,7 @@ from .ids import (
     clip_summary,
     effective_text,
     infer_channel,
+    is_admin,
     is_substantive,
     match_enum,
     needs_more_info,
@@ -275,50 +276,49 @@ def classify_and_log(channel: str, ts: str, user: str, text: str,
     _log_resolved(channel, ts, user, r, dup_of=dup_of)
 
 
-# -- Feature 2: resolution (human-in-the-loop) ------------------------------
-def run_resolution_check(row: Row, channel: str, thread_ts: str) -> None:
-    # Only for still-active items, and only once (skip if we have already proposed
-    # a resolution and are awaiting the confirmation).
-    if row.status not in config.OPEN_STATUSES or row.confirm_ts:
-        return
+# -- Feature 2: status transitions + resolution -----------------------------
+def set_status(row: Row, channel: str, new_status: str, note: str = "") -> None:
+    """Move a row to a new lifecycle status and announce it in its thread."""
+    updates = {"Status": new_status}
+    if new_status in (config.STATUS_ANSWERED, config.STATUS_CLOSED, "Solved"):
+        updates["Date Resolved"] = today_str()
+    store.set(row.row_number, updates)
+    audit("status", row=row.row_number, id=row.values.get("ID"), status=new_status)
+    try:
+        post(channel=channel, thread_ts=row.original_ts,
+             text=note or f":arrows_counterclockwise: *#{row.values.get('ID')}* now *{new_status}*.")
+    except Exception:
+        pass
+    log(f"row {row.row_number} -> {new_status}")
+
+
+def run_resolution_check(row: Row, channel: str, thread_ts: str) -> bool:
+    """Judge whether the thread answers the question. If so, move it to Answered
+    automatically (no confirmation step) and return True. Returns False otherwise."""
+    if row.status not in config.OPEN_STATUSES:
+        return False
     question = row.values.get("Question Summary", "")
     thread = thread_text(channel, thread_ts)
     if not thread:
-        return
+        return False
     try:
         result = judge_resolution(question, thread)
     except Exception as exc:
         log(f"ERROR resolution judge failed: {exc}")
-        return
+        return False
     data = result["input"]
     audit("resolution", row=row.row_number, id=row.values.get("ID"), slack_ts=thread_ts,
           verdict=data, tokens_in=result["tokens_in"], tokens_out=result["tokens_out"])
     if not data.get("resolved"):
-        return
-
+        return False
     summary = data.get("resolution_summary", "")
     answered_by = data.get("answered_by", "")
-    # Keep the sheet's Status UNCHANGED (item stays active until a human confirms).
-    # Record the proposal in Notes / Handoff without clobbering existing text.
     existing = row.values.get(store.notes_col, "")
-    proposed = f"⏳ Proposed (react ✅ to close): {summary}"
-    if answered_by:
-        proposed += f" (answered by {answered_by})"
-    new_note = proposed + (f"\n{existing}" if existing else "")
-    store.set(row.row_number, {store.notes_col: new_note})
-    row_link = store.row_link(row.row_number)
-    owner_tag = f"<@{row.owner_uid}>" if row.owner_uid else row.values.get("Owner", "there")
-    try:
-        posted = post(
-            channel=channel, thread_ts=thread_ts,
-            text=(f"{owner_tag} Looks resolved: {summary or 'see thread'}. "
-                  f"React :white_check_mark: to confirm and I'll close it "
-                  f"(<{row_link}|row>)."),
-        )
-        store.set_refs(row.row_number, confirm_ts=posted["ts"])
-    except Exception as exc:
-        log(f"WARN could not post confirm note: {exc}")
-    log(f"row {row.row_number} proposed resolution (awaiting ✅)")
+    stamp = f"✅ Answered: {summary}" + (f" (by {answered_by})" if answered_by else "")
+    store.set(row.row_number, {store.notes_col: stamp + (f"\n{existing}" if existing else "")})
+    set_status(row, channel, config.STATUS_ANSWERED,
+               note=f":white_check_mark: *#{row.values.get('ID')}* answered. {summary}".strip())
+    return True
 
 
 def close_row(row: Row, channel: str) -> None:
@@ -408,8 +408,10 @@ def on_message(event, logger):
                 finalize_pending(thread_ts, reason="reply")
                 return
             row = store.find_by_ts(thread_ts)
-            if row:
-                run_resolution_check(row, channel, thread_ts)
+            if row and not run_resolution_check(row, channel, thread_ts):
+                # Not resolved, but a reply means work is happening: bump to In Progress.
+                if row.status in config.PRE_PROGRESS_STATUSES:
+                    set_status(row, channel, config.STATUS_IN_PROGRESS)
             return
 
         # A forwarded message has empty top-level text; its content lives in a
@@ -430,27 +432,27 @@ def on_message(event, logger):
 
 @app.event("reaction_added")
 def on_reaction(event, logger):
+    """Reactions drive the forwarding workflow:
+      :x: on the note/original -> discard (safety net, anyone).
+      An admin (Domenico or the escalator) reacting with a workflow emoji moves the
+      status: :arrow_right: Forwarded, :white_check_mark: Acknowledged,
+      :heart: In Progress, :tada: Solved. Closing is the Mark-solved button."""
     try:
         item = event.get("item", {})
         ts = item.get("ts", "")
         channel = item.get("channel", "")
         reaction = event.get("reaction", "")
+        reactor = event.get("user", "")
         row = store.find_by_ts(ts)
-        if not row:
+        if not row or row.status not in config.OPEN_STATUSES:
             return
-        # Meaning is derived from WHICH message was reacted on:
-        #   x on the bot's log note OR the original -> discard (while still open)
-        #   check on the bot's confirm  -> close
-        #   check on the original       -> run the resolution check
-        if (reaction in config.DISCARD_REACTIONS
-                and ts in (row.anchor_ts, row.original_ts)
-                and row.status in config.OPEN_STATUSES):
+        if reaction in config.DISCARD_REACTIONS:
             discard_row(row, channel)
-        elif reaction in config.CHECK_REACTIONS:
-            if ts == row.confirm_ts and row.status in config.OPEN_STATUSES:
-                close_row(row, channel)
-            elif ts == row.original_ts:
-                run_resolution_check(row, channel, row.original_ts)
+            return
+        new_status = config.EMOJI_STATUS.get(reaction)
+        if new_status and is_admin(reactor, row.owner_uid, config.ADMIN_USER_IDS):
+            if new_status != row.status:
+                set_status(row, channel, new_status)
     except Exception:
         log("ERROR in on_reaction:\n" + traceback.format_exc())
 

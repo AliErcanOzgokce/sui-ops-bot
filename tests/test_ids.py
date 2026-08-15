@@ -4,6 +4,7 @@ from sui_ops_bot.ids import (
     clip_summary,
     effective_text,
     infer_channel,
+    is_admin,
     is_substantive,
     match_enum,
     needs_more_info,
@@ -86,6 +87,33 @@ class TestResolvePlatform:
 
     def test_all_empty_is_blank(self):
         assert resolve_platform("", "", "") == ""
+
+
+class TestIsAdmin:
+    def test_configured_admin(self):
+        assert is_admin("UDOM", "UOWNER", ["UDOM", "UBOSS"]) is True
+
+    def test_escalator_owner_is_admin(self):
+        assert is_admin("UOWNER", "UOWNER", []) is True
+
+    def test_random_user_is_not(self):
+        assert is_admin("URANDO", "UOWNER", ["UDOM"]) is False
+
+    def test_empty_user_is_not(self):
+        assert is_admin("", "UOWNER", ["UDOM"]) is False
+
+
+class TestEmojiStatusMap:
+    def test_emoji_map_covers_the_four_admin_actions(self):
+        assert config.EMOJI_STATUS == {
+            "arrow_right": "Forwarded",
+            "white_check_mark": "Acknowledged",
+            "heart": "In Progress",
+            "tada": "Solved",
+        }
+        # Every mapped status is a real lifecycle state.
+        for status in config.EMOJI_STATUS.values():
+            assert status in config.STATUSES
 
 
 class TestNeedsMoreInfo:
