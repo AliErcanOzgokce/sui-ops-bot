@@ -284,6 +284,21 @@ class TestFollowups:
         assert "No follow-ups" in out
 
 
+class TestHelpText:
+    def test_lists_commands_and_lifecycle_and_mcp(self):
+        out = reports.help_text()
+        for cmd in ("!status", "!open", "!aging", "!followups", "!help"):
+            assert cmd in out
+        # emoji legend derived from the config map
+        for status in config.EMOJI_STATUS.values():
+            assert status in out
+        assert "Mark solved" in out
+        assert "MCP" in out
+
+    def test_no_em_dashes(self):
+        assert "—" not in reports.help_text() and "–" not in reports.help_text()
+
+
 class TestSetSourcePromptBlocks:
     def test_menu_carries_ts_and_venues(self):
         blocks = reports.set_source_prompt_blocks("1786.42")

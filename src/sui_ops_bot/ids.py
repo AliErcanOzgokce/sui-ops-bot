@@ -8,8 +8,14 @@ from __future__ import annotations
 
 import re
 
-# Words a top-level message can be and still not be worth an LLM call.
-_TRIVIAL = {"thanks", "thank you", "ty", "done", "ok", "okay", "+1", "lgtm"}
+# Words / short chatter a message can be and still not be worth an LLM call or a
+# bot response. Keeps the bot from acting on greetings and acknowledgements.
+_TRIVIAL = {
+    "thanks", "thank you", "thanks!", "thx", "ty", "tysm", "done", "ok", "okay", "k",
+    "+1", "lgtm", "gm", "gn", "hi", "hello", "hey", "yo", "sup", "lol", "haha", "nice",
+    "cool", "great", "awesome", "perfect", "np", "yw", "sure", "yep", "yeah", "nope",
+    "same", "agreed", "welcome", "cheers",
+}
 
 
 def norm_id(s: str) -> str:

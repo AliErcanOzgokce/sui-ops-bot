@@ -258,6 +258,13 @@ class TestIsSubstantive:
     def test_trivial_ack_dropped(self):
         assert not is_substantive("thanks" + " " * 30, 5)
 
+    def test_greetings_and_chatter_dropped(self):
+        for chatter in ("gm", "hello", "hey", "lol", "nice", "cheers", "perfect"):
+            assert not is_substantive(chatter, 1), chatter
+
+    def test_real_question_still_kept(self):
+        assert is_substantive("hey, is the mainnet RPC endpoint down right now?", 5)
+
     def test_markup_and_emoji_stripped_before_length(self):
         assert not is_substantive("<@U123> :wave: :tada:", 25)
 
