@@ -372,11 +372,8 @@ def handle_text_command(channel: str, text: str, ts: str, thread_ts: str | None)
         kwargs = {"blocks": blocks} if blocks else {}
         post(channel=channel, thread_ts=reply_thread,
              text=reports.followups_report(store, linker=permalink), **kwargs)
-    elif mentioned:
-        post(channel=channel, thread_ts=reply_thread,
-             text="Commands: `!status` · `!open` · `!aging` · `!followups` (or `@me status`). "
-                  "Native `/status /open /aging` work after the app is reinstalled with the "
-                  "`commands` scope.")
+    elif key in ("help", "commands", "?") or mentioned:
+        post(channel=channel, thread_ts=reply_thread, text=reports.help_text())
     else:
         return False
     log(f"handled text command '{key or 'help'}' in {channel}")
@@ -403,7 +400,11 @@ def on_message(event, logger):
         _sweep_pending()
 
         if thread_ts and thread_ts != ts:
-            # A reply on a held question counts as the answer: log it now.
+            # Anti-spam: ignore trivial replies (thanks, gm, emoji) so a chatty
+            # thread does not trigger LLM judging or status churn.
+            if not is_substantive(text, config.MIN_MESSAGE_CHARS, has_image=bool(image_refs(event))):
+                return
+            # A substantive reply on a held question counts as the answer: log it now.
             if thread_ts in _pending:
                 finalize_pending(thread_ts, reason="reply")
                 return
@@ -600,6 +601,8 @@ def on_mention(event, say):
         blocks = reports.followups_blocks(store, linker=permalink)
         kwargs = {"blocks": blocks} if blocks else {}
         say(text=reports.followups_report(store, linker=permalink), **kwargs)
+    elif "help" in text:
+        say(reports.help_text())
     else:
         say(reports.status_report(store))
 

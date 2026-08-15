@@ -210,6 +210,38 @@ def escalation_note_blocks(rid, product: str, qtype: str, row_link: str, value: 
     return blocks
 
 
+def help_text() -> str:
+    """The help message: Slack commands, the reaction-driven lifecycle legend
+    (derived from the config emoji map so it never drifts), and how to reach the
+    MCP tools from Claude."""
+    cmds = [
+        "`!status`: open items summary",
+        "`!open`: the list of open items",
+        "`!aging`: items older than the aging threshold",
+        "`!followups`: items grouped by who we wait on, with a one-tap Nudge",
+        "`!help`: this message",
+    ]
+    descs = {
+        "Forwarded": "forwarded to the internal team",
+        "Acknowledged": "seen and acknowledged",
+        "In Progress": "being worked on",
+        "Solved": "the underlying issue is fixed",
+    }
+    legend = [f":{emoji}: *{status}*: {descs.get(status, '')}"
+              for emoji, status in config.EMOJI_STATUS.items()]
+    return (
+        "*Sui Dev-Leads Ops Bot*\n\n"
+        "*Commands (type in this channel):*\n"
+        + "\n".join(f"- {c}" for c in cmds)
+        + "\n\n*Question lifecycle* (admins react on the note to move it):\n"
+        + "\n".join(legend)
+        + "\nReply in the thread to move it to In Progress. The bot marks it *Answered* "
+        "when it detects an answer. Use the *Mark solved* button to close, and :x: to discard.\n\n"
+        "*MCP (in Claude):* connect the sui-ops MCP, then ask it to post a message, check "
+        "status, run a weekly report, mark an item solved, or ping the owner."
+    )
+
+
 def set_source_prompt_blocks(value: str) -> list:
     """A bare set-source menu for the ask-before-logging prompt: one static select
     whose option values carry the message ts, so the handler can finalize the held
